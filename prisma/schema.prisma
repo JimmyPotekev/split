@@ -1,0 +1,89 @@
+// Schema for Split.
+// Design notes:
+//  - No global User table. A "Member" belongs to exactly one Group. Simpler for the share-link model.
+//  - Amounts stored as integers in the group's minor currency unit (cents). Avoids float drift.
+//  - Expense has many ExpenseShare rows so we can support equal/exact/percent uniformly:
+//    every split type ends up as a set of {member, amount} rows that sum to the expense total.
+//  - Settlement is its own thing, not a special-case expense. Cleaner reporting later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  slug        String   @unique              // the shareable URL token
+  name        String
+  currency    String   @default("USD")      // ISO 4217, three letters
+  createdAt   DateTime @default(now())
+
+  members     Member[]
+  expenses    Expense[]
+  settlements Settlement[]
+}
+
+model Member {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  paidExpenses    Expense[]      @relation("ExpensePayer")
+  expenseShares   ExpenseShare[]
+  settlementsFrom Settlement[]   @relation("SettlementFrom")
+  settlementsTo   Settlement[]   @relation("SettlementTo")
+
+  @@index([groupId])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payerId     String
+  payer       Member   @relation("ExpensePayer", fields: [payerId], references: [id])
+  description String
+  amount      Int                                // total, in cents
+  date        DateTime @default(now())
+  splitType   String   @default("equal")         // "equal" | "exact" | "percent"
+  createdAt   DateTime @default(now())
+
+  shares      ExpenseShare[]
+
+  @@index([groupId])
+}
+
+model ExpenseShare {
+  id        String  @id @default(cuid())
+  expenseId String
+  expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id])
+  amount    Int                                  // this member's share, in cents
+
+  @@unique([expenseId, memberId])
+  @@index([memberId])
+}
+
+model Settlement {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromId    String
+  from      Member   @relation("SettlementFrom", fields: [fromId], references: [id])
+  toId      String
+  to        Member   @relation("SettlementTo", fields: [toId], references: [id])
+  amount    Int                                  // in cents
+  note      String?
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+}
