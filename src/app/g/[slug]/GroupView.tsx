@@ -1,11 +1,12 @@
 'use client'
 
-// Group page shell. Wires header + members + expense list + add-expense form.
-// Balance panel and settle-up view come in phases 4 and 5.
+// Group page shell. Wires header + members + balance panel + expenses + form.
+// Settle-up view (minimum transfers) comes in phase 5.
 
 import { useState } from 'react'
 import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
+import BalancePanel from './BalancePanel'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -17,13 +18,20 @@ interface Expense {
   payerId: string
   shares: Share[]
 }
+interface Settlement {
+  id: string
+  fromId: string
+  toId: string
+  amount: number
+  date: string | Date
+}
 interface Group {
   slug: string
   name: string
   currency: string
   members: Member[]
   expenses: Expense[]
-  settlements: unknown[]
+  settlements: Settlement[]
 }
 
 export default function GroupView({ group }: { group: Group }) {
@@ -58,17 +66,15 @@ export default function GroupView({ group }: { group: Group }) {
       </header>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">People</h2>
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {group.members.map((m) => (
-            <li
-              key={m.id}
-              className="rounded-full bg-white border border-zinc-200 px-3 py-1 text-sm"
-            >
-              {m.name}
-            </li>
-          ))}
-        </ul>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Balances</h2>
+        <div className="mt-3">
+          <BalancePanel
+            members={group.members}
+            expenses={group.expenses}
+            settlements={group.settlements}
+            currency={group.currency}
+          />
+        </div>
       </section>
 
       <section className="mt-10">
