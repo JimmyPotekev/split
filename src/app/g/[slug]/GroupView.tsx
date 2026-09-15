@@ -1,19 +1,28 @@
 'use client'
 
-// Client shell for the group page. Right now it just shows the header,
-// members, and a share button. Phase 3 wires in the add-expense form,
-// phase 4 the balance panel, phase 5 the settle-up view.
-// Keeping this as one component for now; will split when it grows.
+// Group page shell. Wires header + members + expense list + add-expense form.
+// Balance panel and settle-up view come in phases 4 and 5.
 
 import { useState } from 'react'
+import ExpenseForm from './ExpenseForm'
+import ExpenseList from './ExpenseList'
 
 interface Member { id: string; name: string }
+interface Share { memberId: string; amount: number }
+interface Expense {
+  id: string
+  description: string
+  amount: number
+  date: string | Date
+  payerId: string
+  shares: Share[]
+}
 interface Group {
   slug: string
   name: string
   currency: string
   members: Member[]
-  expenses: unknown[]
+  expenses: Expense[]
   settlements: unknown[]
 }
 
@@ -27,7 +36,6 @@ export default function GroupView({ group }: { group: Group }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // clipboard blocked (older browser, iframe). Fall back to selecting.
       window.prompt('Copy this link:', url)
     }
   }
@@ -65,9 +73,17 @@ export default function GroupView({ group }: { group: Group }) {
 
       <section className="mt-10">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Expenses</h2>
-        <p className="mt-2 text-sm text-zinc-500">
-          No expenses yet. Add-expense form ships in the next update.
-        </p>
+        <div className="mt-3">
+          <ExpenseList
+            expenses={group.expenses}
+            members={group.members}
+            currency={group.currency}
+          />
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <ExpenseForm slug={group.slug} members={group.members} />
       </section>
     </main>
   )
