@@ -1,12 +1,15 @@
 'use client'
 
-// Group page shell. Wires header + members + balance panel + expenses + form.
-// Settle-up view (minimum transfers) comes in phase 5.
+// Group page shell. Order top-to-bottom:
+//  header -> balances -> settle-up suggestions -> history -> add-expense form
+// Reasoning: balances answer "what's my status", settle-up answers "what do I
+// do next", history is reference, and the form is the input at the bottom.
 
 import { useState } from 'react'
 import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
+import SettleUp from './SettleUp'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -24,6 +27,7 @@ interface Settlement {
   toId: string
   amount: number
   date: string | Date
+  note?: string | null
 }
 interface Group {
   slug: string
@@ -77,11 +81,25 @@ export default function GroupView({ group }: { group: Group }) {
         </div>
       </section>
 
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Settle up</h2>
+        <div className="mt-3">
+          <SettleUp
+            slug={group.slug}
+            members={group.members}
+            expenses={group.expenses}
+            settlements={group.settlements}
+            currency={group.currency}
+          />
+        </div>
+      </section>
+
       <section className="mt-10">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Expenses</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">History</h2>
         <div className="mt-3">
           <ExpenseList
             expenses={group.expenses}
+            settlements={group.settlements}
             members={group.members}
             currency={group.currency}
           />
