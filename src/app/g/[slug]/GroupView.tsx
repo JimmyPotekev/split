@@ -98,6 +98,7 @@ export default function GroupView({ group }: { group: Group }) {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">History</h2>
         <div className="mt-3">
           <ExpenseList
+            slug={group.slug}
             expenses={group.expenses}
             settlements={group.settlements}
             members={group.members}
