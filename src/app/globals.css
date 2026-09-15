@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* keeping global css tiny for now, tailwind handles most of it */
+html, body {
+  background: #fafaf9;
+  color: #18181b;
+}
+
+/* softer default outline so focus rings feel intentional not aggressive */
+*:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
