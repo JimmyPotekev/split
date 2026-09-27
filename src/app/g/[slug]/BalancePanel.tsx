@@ -6,7 +6,7 @@
 
 import { useMemo } from 'react'
 import { computeBalances } from '@/lib/balances'
-import { centsToDisplay } from '@/lib/currency'
+import { minorToDisplay } from '@/lib/currency'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -29,7 +29,6 @@ export default function BalancePanel({
     [members, expenses, settlements]
   )
 
-  // Sort: biggest creditor first, biggest debtor last. Easier to scan.
   const rows = useMemo(() => {
     return members
       .map((m) => ({ member: m, balance: balances[m.id] ?? 0 }))
@@ -55,7 +54,7 @@ export default function BalancePanel({
               }
             >
               {r.balance > 0 && '+'}
-              {centsToDisplay(r.balance, currency)}
+              {minorToDisplay(r.balance, currency)}
               <span className="ml-2 text-xs font-normal text-zinc-500">
                 {r.balance > 0 ? 'is owed' : r.balance < 0 ? 'owes' : 'settled'}
               </span>

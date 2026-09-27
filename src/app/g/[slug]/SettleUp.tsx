@@ -11,7 +11,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { computeBalances, minimumTransfers } from '@/lib/balances'
-import { centsToDisplay, parseAmountToCents } from '@/lib/currency'
+import { minorToDisplay, parseAmountToMinor } from '@/lib/currency'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -32,7 +32,7 @@ export default function SettleUp({
   currency: string
 }) {
   const router = useRouter()
-  const [recording, setRecording] = useState<string | null>(null) // transfer key being recorded
+  const [recording, setRecording] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showCustom, setShowCustom] = useState(false)
 
@@ -97,7 +97,7 @@ export default function SettleUp({
                   <span className="text-zinc-500"> pays </span>
                   <span className="font-medium">{to}</span>
                   <span className="ml-2 tabular-nums text-zinc-900">
-                    {centsToDisplay(t.amount, currency)}
+                    {minorToDisplay(t.amount, currency)}
                   </span>
                 </div>
                 <button
@@ -127,6 +127,7 @@ export default function SettleUp({
         <CustomSettlementForm
           slug={slug}
           members={members}
+          currency={currency}
           onDone={() => {
             setShowCustom(false)
             router.refresh()
@@ -141,11 +142,13 @@ export default function SettleUp({
 function CustomSettlementForm({
   slug,
   members,
+  currency,
   onDone,
   onCancel,
 }: {
   slug: string
   members: Member[]
+  currency: string
   onDone: () => void
   onCancel: () => void
 }) {
@@ -158,16 +161,16 @@ function CustomSettlementForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    const cents = parseAmountToCents(amount)
+    const minor = parseAmountToMinor(amount, currency)
     if (fromId === toId) return setError("From and to can't be the same person.")
-    if (cents === null || cents <= 0) return setError('Amount must be a positive number.')
+    if (minor === null || minor <= 0) return setError('Amount must be a positive number.')
 
     setSubmitting(true)
     try {
       const res = await fetch(`/api/groups/${slug}/settlements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromId, toId, amount: cents }),
+        body: JSON.stringify({ fromId, toId, amount: minor }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))

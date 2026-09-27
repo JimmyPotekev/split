@@ -6,16 +6,18 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { parseAmountToCents } from '@/lib/currency'
+import { parseAmountToMinor } from '@/lib/currency'
 
 interface Member { id: string; name: string }
 
 export default function ExpenseForm({
   slug,
   members,
+  currency,
 }: {
   slug: string
   members: Member[]
+  currency: string
 }) {
   const router = useRouter()
   const [description, setDescription] = useState('')
@@ -40,9 +42,9 @@ export default function ExpenseForm({
     e.preventDefault()
     setError(null)
 
-    const cents = parseAmountToCents(amount)
+    const minor = parseAmountToMinor(amount, currency)
     if (!description.trim()) return setError('Add a description.')
-    if (cents === null || cents <= 0) return setError('Amount must be a positive number.')
+    if (minor === null || minor <= 0) return setError('Amount must be a positive number.')
     if (!payerId) return setError('Pick a payer.')
     if (participantIds.size === 0) return setError('Pick at least one participant.')
 
@@ -53,7 +55,7 @@ export default function ExpenseForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description: description.trim(),
-          amount: cents,
+          amount: minor,
           payerId,
           participantIds: [...participantIds],
           splitType: 'equal',
@@ -63,10 +65,8 @@ export default function ExpenseForm({
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not save expense.')
       }
-      // reset the form but keep payer + participants (usually the same next time)
       setDescription('')
       setAmount('')
-      // re-fetch the server component so the new expense shows up
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error.')

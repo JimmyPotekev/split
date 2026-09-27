@@ -108,7 +108,7 @@ export default function GroupView({ group }: { group: Group }) {
       </section>
 
       <section className="mt-6">
-        <ExpenseForm slug={group.slug} members={group.members} />
+        <ExpenseForm slug={group.slug} members={group.members} currency={group.currency} />
       </section>
     </main>
   )

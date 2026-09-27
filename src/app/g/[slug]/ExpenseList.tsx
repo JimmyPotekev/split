@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { centsToDisplay } from '@/lib/currency'
+import { minorToDisplay } from '@/lib/currency'
 import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface Share { memberId: string; amount: number }
@@ -115,7 +115,7 @@ export default function ExpenseList({
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <p className="tabular-nums font-medium">
-                    {centsToDisplay(e.amount, currency)}
+                    {minorToDisplay(e.amount, currency)}
                   </p>
                   <button
                     onClick={() =>
@@ -154,7 +154,7 @@ export default function ExpenseList({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <p className="tabular-nums font-medium text-zinc-700">
-                  {centsToDisplay(s.amount, currency)}
+                  {minorToDisplay(s.amount, currency)}
                 </p>
                 <button
                   onClick={() =>
