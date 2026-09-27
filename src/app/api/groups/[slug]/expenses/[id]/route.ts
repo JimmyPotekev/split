@@ -1,11 +1,11 @@
 // DELETE + PATCH /api/groups/[slug]/expenses/[id]
 // DELETE removes an expense (shares cascade via schema).
 // PATCH updates description, amount, payer, date, participants, splitType.
-// When amount or participants change we nuke old shares and recompute.
+// When amount, participants, or splitType change we nuke old shares and recompute.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { splitEqual } from '@/lib/balances'
+import { splitEqual, splitExact, splitPercent } from '@/lib/balances'
 
 export async function DELETE(
   _req: Request,
@@ -30,6 +30,8 @@ interface PatchBody {
   date?: unknown
   participantIds?: unknown
   splitType?: unknown
+  exactAmounts?: unknown
+  percentages?: unknown
 }
 
 export async function PATCH(
@@ -56,16 +58,13 @@ export async function PATCH(
   const payerId = typeof body.payerId === 'string' ? body.payerId : expense.payerId
   const splitType = typeof body.splitType === 'string' ? body.splitType : expense.splitType
   const date = typeof body.date === 'string' ? new Date(body.date) : expense.date
-  const participantIds = Array.isArray(body.participantIds)
-    ? body.participantIds.filter((x): x is string => typeof x === 'string')
-    : null
 
   if (!description) return NextResponse.json({ error: 'Description required.' }, { status: 400 })
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: 'Amount must be positive.' }, { status: 400 })
   }
-  if (splitType !== 'equal') {
-    return NextResponse.json({ error: 'Only equal split supported for now.' }, { status: 400 })
+  if (splitType !== 'equal' && splitType !== 'exact' && splitType !== 'percent') {
+    return NextResponse.json({ error: 'splitType must be equal, exact, or percent.' }, { status: 400 })
   }
   if (date instanceof Date && isNaN(date.getTime())) {
     return NextResponse.json({ error: 'Invalid date.' }, { status: 400 })
@@ -76,11 +75,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'Payer is not in this group.' }, { status: 400 })
   }
 
-  // figure out if shares need rebuilding
   const oldParticipantIds = expense.shares.map((s) => s.memberId).sort()
-  const newParticipantIds = participantIds
-    ? [...participantIds].sort()
-    : oldParticipantIds
+  const participantIds = Array.isArray(body.participantIds)
+    ? body.participantIds.filter((x): x is string => typeof x === 'string')
+    : null
+  const newParticipantIds = participantIds ? [...participantIds].sort() : oldParticipantIds
 
   if (newParticipantIds.length === 0) {
     return NextResponse.json({ error: 'At least one participant required.' }, { status: 400 })
@@ -93,13 +92,45 @@ export async function PATCH(
 
   const sharesChanged =
     participantIds !== null ||
-    amount !== expense.amount
+    amount !== expense.amount ||
+    splitType !== expense.splitType ||
+    body.exactAmounts !== undefined ||
+    body.percentages !== undefined
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
       if (sharesChanged) {
         await tx.expenseShare.deleteMany({ where: { expenseId: params.id } })
-        const shares = splitEqual(amount, newParticipantIds)
+
+        let shares
+        if (splitType === 'equal') {
+          shares = splitEqual(amount, newParticipantIds)
+        } else if (splitType === 'exact') {
+          if (!Array.isArray(body.exactAmounts) || body.exactAmounts.length === 0) {
+            throw new Error('exactAmounts required for exact split.')
+          }
+          const rows = (body.exactAmounts as { memberId?: unknown; amount?: unknown }[]).map((r) => {
+            const mid = typeof r.memberId === 'string' ? r.memberId : ''
+            const amt = typeof r.amount === 'number' ? Math.round(r.amount) : NaN
+            if (!mid || !memberIdSet.has(mid)) throw new Error('Participant is not in this group.')
+            if (!Number.isFinite(amt) || amt < 0) throw new Error('Each exact amount must be non-negative.')
+            return { memberId: mid, amount: amt }
+          })
+          shares = splitExact(amount, rows)
+        } else {
+          if (!Array.isArray(body.percentages) || body.percentages.length === 0) {
+            throw new Error('percentages required for percent split.')
+          }
+          const rows = (body.percentages as { memberId?: unknown; percent?: unknown }[]).map((r) => {
+            const mid = typeof r.memberId === 'string' ? r.memberId : ''
+            const pct = typeof r.percent === 'number' ? r.percent : NaN
+            if (!mid || !memberIdSet.has(mid)) throw new Error('Participant is not in this group.')
+            if (!Number.isFinite(pct) || pct < 0) throw new Error('Each percent must be non-negative.')
+            return { memberId: mid, percent: pct }
+          })
+          shares = splitPercent(amount, rows)
+        }
+
         await tx.expenseShare.createMany({
           data: shares.map((s) => ({
             expenseId: params.id,
@@ -117,7 +148,8 @@ export async function PATCH(
     })
     return NextResponse.json(updated)
   } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Could not update expense.'
     console.error('update expense failed', e)
-    return NextResponse.json({ error: 'Could not update expense.' }, { status: 500 })
+    return NextResponse.json({ error: msg }, { status: 400 })
   }
 }

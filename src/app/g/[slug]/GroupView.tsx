@@ -22,6 +22,7 @@ interface Expense {
   amount: number
   date: string | Date
   payerId: string
+  splitType?: string
   shares: Share[]
 }
 interface Settlement {

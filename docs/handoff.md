@@ -51,8 +51,8 @@ split/
         MemberManager.tsx  add/rename/remove members inline
         BalancePanel.tsx    per-member net balance rows
         SettleUp.tsx        suggested transfers + record button + custom form
-        ExpenseForm.tsx     add-expense form (equal split only right now)
-        ExpenseList.tsx     history rows (expenses + settlements interleaved by date, edit + delete buttons)
+        ExpenseForm.tsx     add-expense form (equal, exact, percent split types)
+        ExpenseList.tsx     history rows (expenses + settlements interleaved by date, expandable breakdown, edit + delete)
         EditExpenseModal.tsx  edit modal for expenses, pre-filled fields, PATCH submission
         EditSettlementModal.tsx  edit modal for settlements, pre-filled fields, PATCH submission
       api/
@@ -89,7 +89,7 @@ split/
 **Built and shipped:**
 - Landing page with create-group form
 - Group page with two-column desktop layout (expense form + balances), history below, members and settle-up in slide-out drawers
-- Equal-split expenses
+- Equal, exact, and percent split expenses
 - Balance computation (memoized) + minimum-transfer settle-up
 - Record suggested settlement OR custom settlement (any from/to/amount)
 - Edit expense or settlement via modal (PATCH endpoints, shares recomputed on change)
@@ -101,7 +101,6 @@ split/
 - Group settings: rename group, change currency (blocked once expenses/settlements exist)
 
 **Schema supports but no UI yet:**
-- Exact and percent split types (only "equal" wired through the form)
 - Settlement `note` field (exposed in edit modal, not in create flow)
 
 **Not built at all:**
@@ -123,7 +122,7 @@ The list that turns v0.1 into something you'd actually recommend. Items are orde
 1. ~~**Edit expense / settlement.**~~ Done. PATCH endpoints on both `expenses/[id]` and `settlements/[id]`. Edit modals (`EditExpenseModal`, `EditSettlementModal`) open from pencil icons on history rows. Expense PATCH recomputes shares in a transaction when amount or participants change. Settlement PATCH also exposes the `note` field.
 2. ~~**Add / remove / rename members.**~~ Done. POST/DELETE/PATCH under `/api/groups/[slug]/members`. Delete blocked with 409 if the member has any expenses or settlements. MemberManager component in GroupView with inline rename and add form.
 3. ~~**Group settings.**~~ Done (name + currency). PATCH `/api/groups/[slug]` for name and currency. Currency change is refused with 409 once any expense or settlement exists. `GroupSettings` component in a slide-out drawer. Archived flag deferred until accounts / "my groups" list make it meaningful.
-4. **Exact and percent splits.** The math (`splitExact`, `splitPercent`) is done and tested. Only the form UI is missing. Add a split-type toggle in ExpenseForm; when exact, show per-participant amount fields with a running total; when percent, show per-participant % fields that must sum to 100.
+4. ~~**Exact and percent splits.**~~ Done. Split-type toggle (Equal/Exact/Percent) in both ExpenseForm and EditExpenseModal. Exact shows per-participant amount fields with a running total and match indicator. Percent shows per-participant % fields (integer-only) that must sum to 100. Both POST and PATCH API routes accept `exactAmounts` or `percentages` payloads. History rows now show the split type label and expand inline to show the per-person breakdown.
 5. **Passphrase-gated destructive actions.** Optional at group creation. When set, all DELETE and PATCH endpoints require an `X-Group-Pass` header. UI stores it in sessionStorage. Not real auth but keeps casual link-holders from wiping the group.
 6. **Optimistic UI.** Wrap fetch calls in a small helper that updates local state immediately, reverts on failure. Biggest wins: add-expense (form should clear instantly), delete (row should disappear instantly), record-settlement (row should shrink instantly). Use React 19's `useOptimistic` if we bump versions, otherwise hand-rolled.
 7. **Offline queue.** IndexedDB store of pending mutations. Service worker replays on reconnect. Overkill for v0.1 users but essential the moment someone tries to log a restaurant bill on airplane wifi. Consider deferring to phase B if it delays shipping.
