@@ -93,7 +93,7 @@ export default function ExpenseList({
   if (rows.length === 0) {
     return (
       <p className="text-sm text-zinc-500">
-        No activity yet. Add your first expense below.
+        No activity yet. Add your first expense above.
       </p>
     )
   }

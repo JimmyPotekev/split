@@ -47,7 +47,7 @@ split/
       not-found.tsx         friendly 404 for bad slugs
       g/[slug]/
         page.tsx            server component, fetches group via Prisma
-        GroupView.tsx       client shell (header, share button, wires sections)
+        GroupView.tsx       client shell (header with action buttons, two-column grid, drawer wiring)
         MemberManager.tsx  add/rename/remove members inline
         BalancePanel.tsx    per-member net balance rows
         SettleUp.tsx        suggested transfers + record button + custom form
@@ -67,6 +67,7 @@ split/
 
     components/
       ConfirmDialog.tsx     modal used by delete flows, esc + backdrop + focus ring
+      Drawer.tsx            reusable slide-out panel from the right, used for Members + Settle up
 ```
 
 ## 4. Major decisions
@@ -87,7 +88,7 @@ split/
 
 **Built and shipped:**
 - Landing page with create-group form
-- Group page (header, share button, member list, balance panel, settle-up, history, add-expense form)
+- Group page with two-column desktop layout (expense form + balances), history below, members and settle-up in slide-out drawers
 - Equal-split expenses
 - Balance computation (memoized) + minimum-transfer settle-up
 - Record suggested settlement OR custom settlement (any from/to/amount)
