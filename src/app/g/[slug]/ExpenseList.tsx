@@ -4,11 +4,15 @@
 // through the shared ConfirmDialog so it looks like a real app, not a browser
 // alert. Pending state ({ kind, id, label }) drives both which row shows the
 // spinner and what the dialog says.
+//
+// Edit flows open a modal pre-filled with the existing data.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { minorToDisplay } from '@/lib/currency'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import EditExpenseModal from './EditExpenseModal'
+import EditSettlementModal from './EditSettlementModal'
 
 interface Share { memberId: string; amount: number }
 interface Expense {
@@ -51,6 +55,8 @@ export default function ExpenseList({
   const router = useRouter()
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const nameById = new Map(members.map((m) => [m.id, m.name]))
 
   async function confirmDelete() {
@@ -65,7 +71,6 @@ export default function ExpenseList({
       setPending(null)
       router.refresh()
     } catch (err) {
-      // keep the dialog open so the user sees it didn't work
       alert(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setBusy(false)
@@ -113,10 +118,21 @@ export default function ExpenseList({
                     {r.date.toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex shrink-0 items-center gap-2">
                   <p className="tabular-nums font-medium">
                     {minorToDisplay(e.amount, currency)}
                   </p>
+                  <button
+                    onClick={() => setEditingExpense(e)}
+                    className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
+                    aria-label={`Edit ${e.description}`}
+                    title="Edit"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                      <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+                      <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={() =>
                       setPending({ kind: 'expense', id: e.id, label: e.description })
@@ -152,10 +168,21 @@ export default function ExpenseList({
                   Settlement · {r.date.toLocaleDateString()}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2">
                 <p className="tabular-nums font-medium text-zinc-700">
                   {minorToDisplay(s.amount, currency)}
                 </p>
+                <button
+                  onClick={() => setEditingSettlement(s)}
+                  className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
+                  aria-label={`Edit settlement ${label}`}
+                  title="Edit"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                    <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+                    <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+                  </svg>
+                </button>
                 <button
                   onClick={() =>
                     setPending({ kind: 'settlement', id: s.id, label })
@@ -186,6 +213,26 @@ export default function ExpenseList({
         onConfirm={confirmDelete}
         onCancel={() => !busy && setPending(null)}
       />
+
+      {editingExpense && (
+        <EditExpenseModal
+          slug={slug}
+          expense={editingExpense}
+          members={members}
+          currency={currency}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
+
+      {editingSettlement && (
+        <EditSettlementModal
+          slug={slug}
+          settlement={editingSettlement}
+          members={members}
+          currency={currency}
+          onClose={() => setEditingSettlement(null)}
+        />
+      )}
     </>
   )
 }

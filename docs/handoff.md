@@ -51,14 +51,16 @@ split/
         BalancePanel.tsx    per-member net balance rows
         SettleUp.tsx        suggested transfers + record button + custom form
         ExpenseForm.tsx     add-expense form (equal split only right now)
-        ExpenseList.tsx     history rows (expenses + settlements interleaved by date, delete buttons)
+        ExpenseList.tsx     history rows (expenses + settlements interleaved by date, edit + delete buttons)
+        EditExpenseModal.tsx  edit modal for expenses, pre-filled fields, PATCH submission
+        EditSettlementModal.tsx  edit modal for settlements, pre-filled fields, PATCH submission
       api/
         groups/route.ts                     POST creates group + members
         groups/[slug]/route.ts              GET returns group + members + expenses + settlements
         groups/[slug]/expenses/route.ts     POST creates expense + shares
-        groups/[slug]/expenses/[id]/route.ts   DELETE with group-slug ownership check
+        groups/[slug]/expenses/[id]/route.ts   DELETE + PATCH with group-slug ownership check
         groups/[slug]/settlements/route.ts  POST creates settlement
-        groups/[slug]/settlements/[id]/route.ts   DELETE with group-slug ownership check
+        groups/[slug]/settlements/[id]/route.ts   DELETE + PATCH with group-slug ownership check
 
     components/
       ConfirmDialog.tsx     modal used by delete flows, esc + backdrop + focus ring
@@ -86,6 +88,7 @@ split/
 - Equal-split expenses
 - Balance computation (memoized) + minimum-transfer settle-up
 - Record suggested settlement OR custom settlement (any from/to/amount)
+- Edit expense or settlement via modal (PATCH endpoints, shares recomputed on change)
 - Delete expense or settlement via confirm modal
 - Multi-currency with proper minor-unit handling
 - 22 unit tests passing (balances + currency)
@@ -93,10 +96,9 @@ split/
 
 **Schema supports but no UI yet:**
 - Exact and percent split types (only "equal" wired through the form)
-- Settlement `note` field (not exposed in UI)
+- Settlement `note` field (exposed in edit modal, not in create flow)
 
 **Not built at all:**
-- Edit expense or settlement (only delete + recreate)
 - Add/remove/rename members after group creation
 - Rename group, change group currency, archive group
 - Access control beyond "know the slug"
@@ -111,7 +113,7 @@ split/
 
 The list that turns v0.1 into something you'd actually recommend. Items are ordered by rough dependency, not priority.
 
-1. **Edit expense / settlement.** PATCH endpoints, edit modal reusing ExpenseForm and CustomSettlementForm. Split logic must recompute shares on amount change. Consider soft-delete + audit log for later, not now.
+1. ~~**Edit expense / settlement.**~~ Done. PATCH endpoints on both `expenses/[id]` and `settlements/[id]`. Edit modals (`EditExpenseModal`, `EditSettlementModal`) open from pencil icons on history rows. Expense PATCH recomputes shares in a transaction when amount or participants change. Settlement PATCH also exposes the `note` field.
 2. **Add / remove / rename members.** POST/DELETE/PATCH under `/api/groups/[slug]/members`. Deleting a member who has expenses or settlements attached should be blocked with a clear error, not silently cascade. Rename is trivial.
 3. **Group settings.** PATCH `/api/groups/[slug]` for name, currency, archived flag. Changing currency mid-group is a footgun (existing minor-unit values don't convert); disable it once any expense exists, or offer a warning + refuse.
 4. **Exact and percent splits.** The math (`splitExact`, `splitPercent`) is done and tested. Only the form UI is missing. Add a split-type toggle in ExpenseForm; when exact, show per-participant amount fields with a running total; when percent, show per-participant % fields that must sum to 100.
