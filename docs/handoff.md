@@ -48,6 +48,7 @@ split/
       g/[slug]/
         page.tsx            server component, fetches group via Prisma
         GroupView.tsx       client shell (header, share button, wires sections)
+        MemberManager.tsx  add/rename/remove members inline
         BalancePanel.tsx    per-member net balance rows
         SettleUp.tsx        suggested transfers + record button + custom form
         ExpenseForm.tsx     add-expense form (equal split only right now)
@@ -59,6 +60,8 @@ split/
         groups/[slug]/route.ts              GET returns group + members + expenses + settlements
         groups/[slug]/expenses/route.ts     POST creates expense + shares
         groups/[slug]/expenses/[id]/route.ts   DELETE + PATCH with group-slug ownership check
+        groups/[slug]/members/route.ts         POST adds member
+        groups/[slug]/members/[id]/route.ts    DELETE + PATCH (rename), delete blocked if member has activity
         groups/[slug]/settlements/route.ts  POST creates settlement
         groups/[slug]/settlements/[id]/route.ts   DELETE + PATCH with group-slug ownership check
 
@@ -90,6 +93,7 @@ split/
 - Record suggested settlement OR custom settlement (any from/to/amount)
 - Edit expense or settlement via modal (PATCH endpoints, shares recomputed on change)
 - Delete expense or settlement via confirm modal
+- Add/remove/rename members after group creation (delete blocked when member has activity)
 - Multi-currency with proper minor-unit handling
 - 22 unit tests passing (balances + currency)
 - Deployed on Vercel with Neon prod DB
@@ -99,7 +103,7 @@ split/
 - Settlement `note` field (exposed in edit modal, not in create flow)
 
 **Not built at all:**
-- Add/remove/rename members after group creation
+- ~~Add/remove/rename members after group creation~~ Done
 - Rename group, change group currency, archive group
 - Access control beyond "know the slug"
 - Optimistic UI (every write round-trips before rendering)
@@ -114,7 +118,7 @@ split/
 The list that turns v0.1 into something you'd actually recommend. Items are ordered by rough dependency, not priority.
 
 1. ~~**Edit expense / settlement.**~~ Done. PATCH endpoints on both `expenses/[id]` and `settlements/[id]`. Edit modals (`EditExpenseModal`, `EditSettlementModal`) open from pencil icons on history rows. Expense PATCH recomputes shares in a transaction when amount or participants change. Settlement PATCH also exposes the `note` field.
-2. **Add / remove / rename members.** POST/DELETE/PATCH under `/api/groups/[slug]/members`. Deleting a member who has expenses or settlements attached should be blocked with a clear error, not silently cascade. Rename is trivial.
+2. ~~**Add / remove / rename members.**~~ Done. POST/DELETE/PATCH under `/api/groups/[slug]/members`. Delete blocked with 409 if the member has any expenses or settlements. MemberManager component in GroupView with inline rename and add form.
 3. **Group settings.** PATCH `/api/groups/[slug]` for name, currency, archived flag. Changing currency mid-group is a footgun (existing minor-unit values don't convert); disable it once any expense exists, or offer a warning + refuse.
 4. **Exact and percent splits.** The math (`splitExact`, `splitPercent`) is done and tested. Only the form UI is missing. Add a split-type toggle in ExpenseForm; when exact, show per-participant amount fields with a running total; when percent, show per-participant % fields that must sum to 100.
 5. **Passphrase-gated destructive actions.** Optional at group creation. When set, all DELETE and PATCH endpoints require an `X-Group-Pass` header. UI stores it in sessionStorage. Not real auth but keeps casual link-holders from wiping the group.

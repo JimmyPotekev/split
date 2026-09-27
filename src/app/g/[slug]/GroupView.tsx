@@ -10,6 +10,7 @@ import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
 import SettleUp from './SettleUp'
+import MemberManager from './MemberManager'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -68,6 +69,13 @@ export default function GroupView({ group }: { group: Group }) {
           {copied ? 'Copied!' : 'Share link'}
         </button>
       </header>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Members</h2>
+        <div className="mt-3">
+          <MemberManager slug={group.slug} members={group.members} />
+        </div>
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Balances</h2>
