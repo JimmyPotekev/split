@@ -11,6 +11,7 @@ import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
 import SettleUp from './SettleUp'
 import MemberManager from './MemberManager'
+import GroupSettings from './GroupSettings'
 import Drawer from '@/components/Drawer'
 
 interface Member { id: string; name: string }
@@ -42,7 +43,7 @@ interface Group {
 
 export default function GroupView({ group }: { group: Group }) {
   const [copied, setCopied] = useState(false)
-  const [openDrawer, setOpenDrawer] = useState<'members' | 'settle' | null>(null)
+  const [openDrawer, setOpenDrawer] = useState<'members' | 'settle' | 'settings' | null>(null)
 
   async function copyLink() {
     const url = typeof window !== 'undefined' ? window.location.href : ''
@@ -73,6 +74,9 @@ export default function GroupView({ group }: { group: Group }) {
           </button>
           <button onClick={() => setOpenDrawer('settle')} className={btnClass}>
             Settle up
+          </button>
+          <button onClick={() => setOpenDrawer('settings')} className={btnClass}>
+            Settings
           </button>
           <button onClick={copyLink} className={btnClass}>
             {copied ? 'Copied!' : 'Share link'}
@@ -120,6 +124,19 @@ export default function GroupView({ group }: { group: Group }) {
         title="Members"
       >
         <MemberManager slug={group.slug} members={group.members} />
+      </Drawer>
+
+      <Drawer
+        open={openDrawer === 'settings'}
+        onClose={() => setOpenDrawer(null)}
+        title="Group settings"
+      >
+        <GroupSettings
+          slug={group.slug}
+          name={group.name}
+          currency={group.currency}
+          hasActivity={group.expenses.length > 0 || group.settlements.length > 0}
+        />
       </Drawer>
 
       <Drawer

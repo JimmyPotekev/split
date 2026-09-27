@@ -98,6 +98,7 @@ split/
 - Multi-currency with proper minor-unit handling
 - 22 unit tests passing (balances + currency)
 - Deployed on Vercel with Neon prod DB
+- Group settings: rename group, change currency (blocked once expenses/settlements exist)
 
 **Schema supports but no UI yet:**
 - Exact and percent split types (only "equal" wired through the form)
@@ -105,7 +106,8 @@ split/
 
 **Not built at all:**
 - ~~Add/remove/rename members after group creation~~ Done
-- Rename group, change group currency, archive group
+- ~~Rename group, change group currency~~ Done (archive deferred)
+- Archive group (deferred until accounts / "my groups" list exist)
 - Access control beyond "know the slug"
 - Optimistic UI (every write round-trips before rendering)
 - Offline queue
@@ -120,7 +122,7 @@ The list that turns v0.1 into something you'd actually recommend. Items are orde
 
 1. ~~**Edit expense / settlement.**~~ Done. PATCH endpoints on both `expenses/[id]` and `settlements/[id]`. Edit modals (`EditExpenseModal`, `EditSettlementModal`) open from pencil icons on history rows. Expense PATCH recomputes shares in a transaction when amount or participants change. Settlement PATCH also exposes the `note` field.
 2. ~~**Add / remove / rename members.**~~ Done. POST/DELETE/PATCH under `/api/groups/[slug]/members`. Delete blocked with 409 if the member has any expenses or settlements. MemberManager component in GroupView with inline rename and add form.
-3. **Group settings.** PATCH `/api/groups/[slug]` for name, currency, archived flag. Changing currency mid-group is a footgun (existing minor-unit values don't convert); disable it once any expense exists, or offer a warning + refuse.
+3. ~~**Group settings.**~~ Done (name + currency). PATCH `/api/groups/[slug]` for name and currency. Currency change is refused with 409 once any expense or settlement exists. `GroupSettings` component in a slide-out drawer. Archived flag deferred until accounts / "my groups" list make it meaningful.
 4. **Exact and percent splits.** The math (`splitExact`, `splitPercent`) is done and tested. Only the form UI is missing. Add a split-type toggle in ExpenseForm; when exact, show per-participant amount fields with a running total; when percent, show per-participant % fields that must sum to 100.
 5. **Passphrase-gated destructive actions.** Optional at group creation. When set, all DELETE and PATCH endpoints require an `X-Group-Pass` header. UI stores it in sessionStorage. Not real auth but keeps casual link-holders from wiping the group.
 6. **Optimistic UI.** Wrap fetch calls in a small helper that updates local state immediately, reverts on failure. Biggest wins: add-expense (form should clear instantly), delete (row should disappear instantly), record-settlement (row should shrink instantly). Use React 19's `useOptimistic` if we bump versions, otherwise hand-rolled.
@@ -154,7 +156,7 @@ Bank integration via Flinks (Canada) or Plaid (US), full payment automation, bus
 - **Vertical focus.** Travel groups vs roommates vs couples. Right now the app leans travel (currency at group creation, "trip" language). Committing to one vertical would sharpen UX; staying general risks becoming a nicer Splitwise clone with no unique reason to switch.
 - **Where accounts live.** If we add accounts in phase B, do they subsume the share-link model (accounts required, invited by email) or coexist (share links remain, accounts are optional convenience for people who want a group list). Prefer coexist to preserve the "no signup" superpower.
 - **Delete semantics.** Should deleting an expense delete permanently or soft-delete for audit? Currently hard delete via Prisma cascade. Audit trail would let us build "activity feed" and undo, which are both useful.
-- **Currency change post-creation.** Refuse, warn, or convert existing amounts? See phase A item 3.
+- ~~**Currency change post-creation.**~~ Decided: refuse. Currency change is blocked (409) once any expense or settlement exists. Conversion was considered but has rounding and share-sum-drift risks that aren't worth the complexity for a rare operation. Empty groups can still change currency freely.
 - **Interac deep-link format.** Need to verify what URL scheme the major Canadian bank apps actually accept, or whether we just fall back to `mailto:` with a formatted body.
 - **Real-time approach.** SSE is simpler and free on Vercel; Pusher is turnkey but costs at scale. Decide at phase B start.
 - **Rate limiting.** No rate limiting on API routes right now. Fine for private-link usage, essential the moment anything is publicly discoverable.
