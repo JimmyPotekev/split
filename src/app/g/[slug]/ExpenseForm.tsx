@@ -1,13 +1,16 @@
 'use client'
 
-// Add-expense form. Now with optimistic updates: the form clears instantly on
-// submit and the expense appears in the history before the server responds.
-// If the server rejects it, the optimistic expense is removed and an error shows.
+// Add-expense form. Optimistic updates: the form clears instantly on submit
+// and the expense appears in the history before the server responds. If the
+// server rejects it, the optimistic expense is removed and an error shows.
+// If the network is down, the mutation is queued in IndexedDB and the
+// optimistic entry stays until connectivity returns and the queue replays.
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseAmountToMinor, minorToDisplay, minorUnitFactor } from '@/lib/currency'
 import { splitEqual, splitPercent } from '@/lib/balances'
+import { fetchOrQueue } from '@/lib/offline-queue'
 import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
@@ -29,11 +32,13 @@ export default function ExpenseForm({
   members,
   currency,
   onOptimisticAdd,
+  onQueued,
 }: {
   slug: string
   members: Member[]
   currency: string
   onOptimisticAdd?: (expense: Expense) => OptimisticResult
+  onQueued?: () => void
 }) {
   const router = useRouter()
   const [description, setDescription] = useState('')
@@ -128,7 +133,6 @@ export default function ExpenseForm({
       shares = splitPercent(minor, percentages)
     }
 
-    // optimistic: show the expense in the list immediately
     const optimisticExpense: Expense = {
       id: `optimistic-${Date.now()}`,
       description: description.trim(),
@@ -140,18 +144,26 @@ export default function ExpenseForm({
     }
     const result = onOptimisticAdd?.(optimisticExpense)
 
-    // clear form right away so the user can keep going
     setDescription('')
     setAmount('')
     setExactInputs({})
     setPercentInputs({})
 
     try {
-      const res = await fetch(`/api/groups/${slug}/expenses`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await fetchOrQueue(
+        {
+          url: `/api/groups/${slug}/expenses`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        { type: 'expense', description: description.trim(), groupSlug: slug },
+      )
+      if (res === 'queued') {
+        // keep optimistic state, it'll sync when we're back online
+        onQueued?.()
+        return
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not save expense.')

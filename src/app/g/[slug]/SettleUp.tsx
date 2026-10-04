@@ -1,14 +1,15 @@
 'use client'
 
-// Suggested settle-up transfers. Now with optimistic updates: clicking "Record"
-// on a suggested transfer instantly updates balances and the transfer list.
-// The custom settlement form stays non-optimistic since it has its own submit
-// flow with visible loading state.
+// Suggested settle-up transfers. Optimistic updates: clicking "Record" on a
+// suggested transfer instantly updates balances and the transfer list. The
+// custom settlement form stays non-optimistic since it has its own submit flow
+// with visible loading state. Both paths queue to IndexedDB when offline.
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { computeBalances, minimumTransfers } from '@/lib/balances'
 import { minorToDisplay, parseAmountToMinor } from '@/lib/currency'
+import { fetchOrQueue } from '@/lib/offline-queue'
 import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
@@ -23,6 +24,7 @@ export default function SettleUp({
   settlements,
   currency,
   onOptimisticAdd,
+  onQueued,
 }: {
   slug: string
   members: Member[]
@@ -30,6 +32,7 @@ export default function SettleUp({
   settlements: Settlement[]
   currency: string
   onOptimisticAdd?: (settlement: Settlement) => OptimisticResult
+  onQueued?: () => void
 }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -54,12 +57,27 @@ export default function SettleUp({
     }
     const result = onOptimisticAdd?.(optimisticSettlement)
 
+    const fromName = nameById.get(fromId) ?? 'Someone'
+    const toName = nameById.get(toId) ?? 'Someone'
+
     try {
-      const res = await fetch(`/api/groups/${slug}/settlements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromId, toId, amount }),
-      })
+      const res = await fetchOrQueue(
+        {
+          url: `/api/groups/${slug}/settlements`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromId, toId, amount }),
+        },
+        {
+          type: 'settlement',
+          description: `${fromName} pays ${toName} ${minorToDisplay(amount, currency)}`,
+          groupSlug: slug,
+        },
+      )
+      if (res === 'queued') {
+        onQueued?.()
+        return
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not record.')
@@ -139,6 +157,10 @@ export default function SettleUp({
             router.refresh()
           }}
           onCancel={() => setShowCustom(false)}
+          onQueued={() => {
+            setShowCustom(false)
+            onQueued?.()
+          }}
         />
       )}
     </div>
@@ -151,12 +173,14 @@ function CustomSettlementForm({
   currency,
   onDone,
   onCancel,
+  onQueued,
 }: {
   slug: string
   members: Member[]
   currency: string
   onDone: () => void
   onCancel: () => void
+  onQueued: () => void
 }) {
   const [fromId, setFromId] = useState(members[0]?.id ?? '')
   const [toId, setToId] = useState(members[1]?.id ?? '')
@@ -173,11 +197,23 @@ function CustomSettlementForm({
 
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/groups/${slug}/settlements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromId, toId, amount: minor }),
-      })
+      const res = await fetchOrQueue(
+        {
+          url: `/api/groups/${slug}/settlements`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromId, toId, amount: minor }),
+        },
+        {
+          type: 'settlement',
+          description: `Custom settlement`,
+          groupSlug: slug,
+        },
+      )
+      if (res === 'queued') {
+        onQueued()
+        return
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not record.')

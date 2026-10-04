@@ -4,8 +4,13 @@
 // so mutations feel instant. Children call the optimistic callbacks, do their
 // own fetch, then confirm or revert. router.refresh() still syncs server truth,
 // but the UI doesn't wait for it.
+//
+// Also manages the offline queue: when mutations fail because the network is
+// down, they land in IndexedDB. When connectivity returns, this component
+// replays them in order and refreshes.
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
@@ -13,11 +18,14 @@ import SettleUp from './SettleUp'
 import MemberManager from './MemberManager'
 import GroupSettings from './GroupSettings'
 import Drawer from '@/components/Drawer'
+import OfflineBanner from '@/components/OfflineBanner'
 import PassphrasePrompt, {
   getStoredPassphrase,
   setStoredPassphrase,
   clearStoredPassphrase,
 } from '@/components/PassphrasePrompt'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { getQueue, replayQueue } from '@/lib/offline-queue'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -51,11 +59,18 @@ interface Group {
 export type OptimisticResult = { confirm: () => void; revert: () => void }
 
 export default function GroupView({ group }: { group: Group }) {
+  const router = useRouter()
+  const online = useOnlineStatus()
   const [copied, setCopied] = useState(false)
   const [openDrawer, setOpenDrawer] = useState<'members' | 'settle' | 'settings' | null>(null)
   const [passphrase, setPassphrase] = useState<string | null>(null)
   const [passphrasePromptOpen, setPassphrasePromptOpen] = useState(false)
   const [passphraseError, setPassphraseError] = useState<string | null>(null)
+
+  // -- offline queue state --
+  const [pendingCount, setPendingCount] = useState(0)
+  const [replaying, setReplaying] = useState(false)
+  const replayingRef = useRef(false)
 
   useEffect(() => {
     if (group.hasPassphrase) {
@@ -63,6 +78,49 @@ export default function GroupView({ group }: { group: Group }) {
       if (stored) setPassphrase(stored)
     }
   }, [group.slug, group.hasPassphrase])
+
+  // check queue size on mount and whenever group changes
+  useEffect(() => {
+    getQueue(group.slug).then(items => setPendingCount(items.length)).catch(() => {})
+  }, [group.slug])
+
+  // replay queue when we come back online
+  useEffect(() => {
+    if (!online || replayingRef.current) return
+
+    let cancelled = false
+    async function replay() {
+      const items = await getQueue(group.slug).catch(() => [])
+      if (items.length === 0 || cancelled) return
+
+      replayingRef.current = true
+      setReplaying(true)
+      setPendingCount(items.length)
+
+      await replayQueue(group.slug, (_mutation, _result) => {
+        if (cancelled) return
+        setPendingCount(prev => Math.max(0, prev - 1))
+      })
+
+      if (!cancelled) {
+        replayingRef.current = false
+        setReplaying(false)
+        // clear optimistic state so the server refresh doesn't duplicate entries
+        pendingAddIdsRef.current.clear()
+        pendingDeleteIdsRef.current.clear()
+        const remaining = await getQueue(group.slug).catch(() => [])
+        setPendingCount(remaining.length)
+        router.refresh()
+      }
+    }
+
+    replay()
+    return () => { cancelled = true }
+  }, [online, group.slug, router])
+
+  const handleQueued = useCallback(() => {
+    setPendingCount(prev => prev + 1)
+  }, [])
 
   // -- optimistic local state --
   const [localExpenses, setLocalExpenses] = useState(group.expenses)
@@ -215,6 +273,7 @@ export default function GroupView({ group }: { group: Group }) {
               members={group.members}
               currency={group.currency}
               onOptimisticAdd={addExpenseOptimistic}
+              onQueued={handleQueued}
             />
           </div>
         </section>
@@ -304,6 +363,7 @@ export default function GroupView({ group }: { group: Group }) {
           settlements={localSettlements}
           currency={group.currency}
           onOptimisticAdd={addSettlementOptimistic}
+          onQueued={handleQueued}
         />
       </Drawer>
 
@@ -313,6 +373,8 @@ export default function GroupView({ group }: { group: Group }) {
         onCancel={() => setPassphrasePromptOpen(false)}
         error={passphraseError}
       />
+
+      <OfflineBanner pendingCount={pendingCount} replaying={replaying} />
     </main>
   )
 }
