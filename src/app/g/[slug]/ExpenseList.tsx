@@ -1,12 +1,11 @@
 'use client'
 
-// Combined history: expenses AND settlements interleaved by date. Delete flows
-// through the shared ConfirmDialog so it looks like a real app, not a browser
-// alert. Pending state ({ kind, id, label }) drives both which row shows the
-// spinner and what the dialog says.
+// Combined history: expenses AND settlements interleaved by date. Delete is
+// optimistic now: the row disappears the moment you confirm, and comes back
+// if the server rejects the delete.
 //
-// Edit flows open a modal pre-filled with the existing data.
-// Expense rows expand inline to show the per-person breakdown.
+// Edit flows still wait for the server (they show a modal with a loading state,
+// which is fine UX for edits). Expense rows expand inline to show breakdown.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -15,6 +14,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { isPassphraseError } from '@/components/PassphrasePrompt'
 import EditExpenseModal from './EditExpenseModal'
 import EditSettlementModal from './EditSettlementModal'
+import type { OptimisticResult } from './GroupView'
 
 interface Share { memberId: string; amount: number }
 interface Expense {
@@ -58,6 +58,8 @@ export default function ExpenseList({
   hasPassphrase,
   onPassphraseNeeded,
   onPassphraseWrong,
+  onOptimisticRemoveExpense,
+  onOptimisticRemoveSettlement,
 }: {
   slug: string
   expenses: Expense[]
@@ -68,10 +70,11 @@ export default function ExpenseList({
   hasPassphrase?: boolean
   onPassphraseNeeded?: () => void
   onPassphraseWrong?: () => void
+  onOptimisticRemoveExpense?: (id: string) => OptimisticResult
+  onOptimisticRemoveSettlement?: (id: string) => OptimisticResult
 }) {
   const router = useRouter()
   const [pending, setPending] = useState<Pending | null>(null)
-  const [busy, setBusy] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -89,27 +92,34 @@ export default function ExpenseList({
       onPassphraseNeeded?.()
       return
     }
-    setBusy(true)
+
+    const { kind, id } = pending
+    const removeFn = kind === 'expense' ? onOptimisticRemoveExpense : onOptimisticRemoveSettlement
+    const result = removeFn?.(id)
+
+    // close dialog and remove row immediately
+    setPending(null)
+
+    const path = kind === 'expense' ? 'expenses' : 'settlements'
     try {
-      const path = pending.kind === 'expense' ? 'expenses' : 'settlements'
-      const res = await fetch(`/api/groups/${slug}/${path}/${pending.id}`, {
+      const res = await fetch(`/api/groups/${slug}/${path}/${id}`, {
         method: 'DELETE',
         headers: passphraseHeaders(),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          result?.revert()
           onPassphraseWrong?.()
           return
         }
         throw new Error('Delete failed')
       }
-      setPending(null)
+      result?.confirm()
       router.refresh()
     } catch (err) {
+      result?.revert()
       alert(err instanceof Error ? err.message : 'Delete failed')
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -143,8 +153,9 @@ export default function ExpenseList({
             const payerName = nameById.get(e.payerId) ?? 'Someone'
             const isPending = pending?.id === e.id
             const isExpanded = expandedId === e.id
+            const isOptimistic = e.id.startsWith('optimistic-')
             return (
-              <li key={`e-${e.id}`}>
+              <li key={`e-${e.id}`} className={isOptimistic ? 'opacity-70' : undefined}>
                 <div className="group flex items-center justify-between gap-4 px-4 py-3">
                   <button
                     type="button"
@@ -178,28 +189,32 @@ export default function ExpenseList({
                           <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                         </svg>
                       </button>
-                      <button
-                        onClick={() => setEditingExpense(e)}
-                        className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
-                        aria-label={`Edit ${e.description}`}
-                        title="Edit"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                          <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
-                          <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() =>
-                          setPending({ kind: 'expense', id: e.id, label: e.description })
-                        }
-                        disabled={isPending}
-                        className="text-zinc-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 focus:opacity-100"
-                        aria-label={`Delete ${e.description}`}
-                        title="Delete"
-                      >
-                        ✕
-                      </button>
+                      {!isOptimistic && (
+                        <>
+                          <button
+                            onClick={() => setEditingExpense(e)}
+                            className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
+                            aria-label={`Edit ${e.description}`}
+                            title="Edit"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                              <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+                              <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() =>
+                              setPending({ kind: 'expense', id: e.id, label: e.description })
+                            }
+                            disabled={isPending}
+                            className="text-zinc-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 focus:opacity-100"
+                            aria-label={`Delete ${e.description}`}
+                            title="Delete"
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -235,10 +250,11 @@ export default function ExpenseList({
           const toName = nameById.get(s.toId) ?? 'Someone'
           const label = `${fromName} → ${toName}`
           const isPending = pending?.id === s.id
+          const isOptimistic = s.id.startsWith('optimistic-')
           return (
             <li
               key={`s-${s.id}`}
-              className="group flex items-center justify-between gap-4 bg-zinc-50/60 px-4 py-3"
+              className={'group flex items-center justify-between gap-4 bg-zinc-50/60 px-4 py-3' + (isOptimistic ? ' opacity-70' : '')}
             >
               <div className="min-w-0">
                 <p className="truncate text-sm text-zinc-700">
@@ -254,30 +270,32 @@ export default function ExpenseList({
                 <p className="tabular-nums font-medium text-zinc-700 text-right min-w-[5rem]">
                   {minorToDisplay(s.amount, currency)}
                 </p>
-                <div className="flex items-center gap-2 w-[4.5rem] justify-end">
-                  <button
-                    onClick={() => setEditingSettlement(s)}
-                    className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
-                    aria-label={`Edit settlement ${label}`}
-                    title="Edit"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                      <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
-                      <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() =>
-                      setPending({ kind: 'settlement', id: s.id, label })
-                    }
-                    disabled={isPending}
-                    className="text-zinc-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 focus:opacity-100"
-                    aria-label={`Delete settlement ${label}`}
-                    title="Delete"
-                  >
-                    ✕
-                  </button>
-                </div>
+                {!isOptimistic && (
+                  <div className="flex items-center gap-2 w-[4.5rem] justify-end">
+                    <button
+                      onClick={() => setEditingSettlement(s)}
+                      className="text-zinc-400 opacity-0 transition hover:text-zinc-700 group-hover:opacity-100 focus:opacity-100"
+                      aria-label={`Edit settlement ${label}`}
+                      title="Edit"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                        <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+                        <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() =>
+                        setPending({ kind: 'settlement', id: s.id, label })
+                      }
+                      disabled={isPending}
+                      className="text-zinc-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 focus:opacity-100"
+                      aria-label={`Delete settlement ${label}`}
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
             </li>
           )
@@ -293,9 +311,9 @@ export default function ExpenseList({
             <span> will be removed from the history and balances will update.</span>
           </>
         }
-        busy={busy}
+        busy={false}
         onConfirm={confirmDelete}
-        onCancel={() => !busy && setPending(null)}
+        onCancel={() => setPending(null)}
       />
 
       {editingExpense && (

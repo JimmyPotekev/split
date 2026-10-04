@@ -99,6 +99,8 @@ split/
 - 22 unit tests passing (balances + currency)
 - Deployed on Vercel with Neon prod DB
 - Group settings: rename group, change currency (blocked once expenses/settlements exist)
+- Optimistic UI for add-expense, delete, and record-settlement (instant local state, revert on failure)
+- Create-group loading UX: spinner animation, two-phase status text ("Creating..." / "Opening..."), full-page transition overlay during navigation
 
 **Schema supports but no UI yet:**
 - Settlement `note` field (exposed in edit modal, not in create flow)
@@ -108,7 +110,7 @@ split/
 - ~~Rename group, change group currency~~ Done (archive deferred)
 - Archive group (deferred until accounts / "my groups" list exist)
 - Access control beyond "know the slug"
-- Optimistic UI (every write round-trips before rendering)
+- ~~Optimistic UI (every write round-trips before rendering)~~ Done
 - Offline queue
 - Categories, receipts, notes, comments, recurring
 - Real accounts, email/notifications
@@ -124,7 +126,7 @@ The list that turns v0.1 into something you'd actually recommend. Items are orde
 3. ~~**Group settings.**~~ Done (name + currency). PATCH `/api/groups/[slug]` for name and currency. Currency change is refused with 409 once any expense or settlement exists. `GroupSettings` component in a slide-out drawer. Archived flag deferred until accounts / "my groups" list make it meaningful.
 4. ~~**Exact and percent splits.**~~ Done. Split-type toggle (Equal/Exact/Percent) in both ExpenseForm and EditExpenseModal. Exact shows per-participant amount fields with a running total and match indicator. Percent shows per-participant % fields (integer-only) that must sum to 100. Both POST and PATCH API routes accept `exactAmounts` or `percentages` payloads. History rows now show the split type label and expand inline to show the per-person breakdown.
 5. ~~**Passphrase-gated destructive actions.**~~ Done. Optional at group creation (also settable later in Group Settings). When set, all DELETE and PATCH endpoints require an `X-Group-Pass` header with the raw passphrase, which the server verifies against a SHA-256 hash stored on the Group record (`passphraseHash`). Client stores the passphrase in `sessionStorage` per group slug. A `PassphrasePrompt` component appears when a gated request is attempted without a passphrase or with the wrong one. Setting the passphrase for the first time does not require an existing passphrase. Changing or removing it does.
-6. **Optimistic UI.** Wrap fetch calls in a small helper that updates local state immediately, reverts on failure. Biggest wins: add-expense (form should clear instantly), delete (row should disappear instantly), record-settlement (row should shrink instantly). Use React 19's `useOptimistic` if we bump versions, otherwise hand-rolled.
+6. ~~**Optimistic UI.**~~ Done. GroupView holds local state for expenses and settlements, synced from server props on each `router.refresh()`. Four optimistic callbacks (`addExpenseOptimistic`, `removeExpenseOptimistic`, `addSettlementOptimistic`, `removeSettlementOptimistic`) update local state immediately and return `{ confirm, revert }` handles. Children call the callback before their fetch, clear/close the UI instantly, then confirm on success or revert on failure. Pending optimistic IDs are tracked in refs so concurrent mutations (e.g. rapid-fire expense adds) survive intermediate `router.refresh()` syncs. Optimistic rows render at reduced opacity and hide edit/delete buttons until confirmed. Edit modals remain non-optimistic (they have their own loading state). Hand-rolled, no React 19 dependency.
 7. **Offline queue.** IndexedDB store of pending mutations. Service worker replays on reconnect. Overkill for v0.1 users but essential the moment someone tries to log a restaurant bill on airplane wifi. Consider deferring to phase B if it delays shipping.
 8. **Empty states and polish.** Every list needs a real empty state with a call to action, not just "No X yet." Skeleton loaders where the server component fetches. Consistent error toasts (single toast component, not inline error strings scattered around).
 

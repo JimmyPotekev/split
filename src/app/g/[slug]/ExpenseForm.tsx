@@ -1,15 +1,26 @@
 'use client'
 
-// Add-expense form. Defaults: payer = first member, participants = everyone,
-// split type = equal. For exact split, per-participant amount fields appear
-// with a running total. For percent, per-participant % fields that must sum
-// to 100.
+// Add-expense form. Now with optimistic updates: the form clears instantly on
+// submit and the expense appears in the history before the server responds.
+// If the server rejects it, the optimistic expense is removed and an error shows.
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseAmountToMinor, minorToDisplay, minorUnitFactor } from '@/lib/currency'
+import { splitEqual, splitPercent } from '@/lib/balances'
+import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
+interface Share { memberId: string; amount: number }
+interface Expense {
+  id: string
+  description: string
+  amount: number
+  date: string | Date
+  payerId: string
+  splitType?: string
+  shares: Share[]
+}
 
 type SplitType = 'equal' | 'exact' | 'percent'
 
@@ -17,10 +28,12 @@ export default function ExpenseForm({
   slug,
   members,
   currency,
+  onOptimisticAdd,
 }: {
   slug: string
   members: Member[]
   currency: string
+  onOptimisticAdd?: (expense: Expense) => OptimisticResult
 }) {
   const router = useRouter()
   const [description, setDescription] = useState('')
@@ -32,7 +45,6 @@ export default function ExpenseForm({
   const [splitType, setSplitType] = useState<SplitType>('equal')
   const [exactInputs, setExactInputs] = useState<Record<string, string>>({})
   const [percentInputs, setPercentInputs] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const factor = minorUnitFactor(currency)
@@ -52,7 +64,6 @@ export default function ExpenseForm({
     })
   }
 
-  // running totals for the UI hints
   const exactTotal = useMemo(() => {
     let sum = 0
     for (const m of participantMembers) {
@@ -88,8 +99,11 @@ export default function ExpenseForm({
       splitType,
     }
 
+    let shares: Share[]
+
     if (splitType === 'equal') {
       payload.participantIds = [...participantIds]
+      shares = splitEqual(minor, [...participantIds])
     } else if (splitType === 'exact') {
       const exactAmounts = participantMembers.map((m) => {
         const v = parseAmountToMinor(exactInputs[m.id] ?? '', currency)
@@ -100,6 +114,7 @@ export default function ExpenseForm({
         return setError(`Exact amounts sum to ${minorToDisplay(sum, currency)}, but the total is ${minorToDisplay(minor, currency)}.`)
       }
       payload.exactAmounts = exactAmounts
+      shares = exactAmounts
     } else {
       const percentages = participantMembers.map((m) => {
         const v = parseInt(percentInputs[m.id] ?? '', 10)
@@ -110,9 +125,27 @@ export default function ExpenseForm({
         return setError(`Percentages sum to ${sum}%, must be exactly 100%.`)
       }
       payload.percentages = percentages
+      shares = splitPercent(minor, percentages)
     }
 
-    setSubmitting(true)
+    // optimistic: show the expense in the list immediately
+    const optimisticExpense: Expense = {
+      id: `optimistic-${Date.now()}`,
+      description: description.trim(),
+      amount: minor,
+      date: new Date().toISOString(),
+      payerId,
+      splitType,
+      shares,
+    }
+    const result = onOptimisticAdd?.(optimisticExpense)
+
+    // clear form right away so the user can keep going
+    setDescription('')
+    setAmount('')
+    setExactInputs({})
+    setPercentInputs({})
+
     try {
       const res = await fetch(`/api/groups/${slug}/expenses`, {
         method: 'POST',
@@ -123,15 +156,11 @@ export default function ExpenseForm({
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not save expense.')
       }
-      setDescription('')
-      setAmount('')
-      setExactInputs({})
-      setPercentInputs({})
+      result?.confirm()
       router.refresh()
     } catch (err) {
+      result?.revert()
       setError(err instanceof Error ? err.message : 'Unknown error.')
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -306,10 +335,9 @@ export default function ExpenseForm({
 
       <button
         type="submit"
-        disabled={submitting}
-        className="w-full rounded-md bg-zinc-900 px-4 py-2 text-white font-medium hover:bg-zinc-800 disabled:opacity-50"
+        className="w-full rounded-md bg-zinc-900 px-4 py-2 text-white font-medium hover:bg-zinc-800"
       >
-        {submitting ? 'Adding...' : 'Add expense'}
+        Add expense
       </button>
     </form>
   )

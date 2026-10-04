@@ -1,11 +1,11 @@
 'use client'
 
-// Group page shell. Layout:
-//  header (with drawer triggers) -> expense form + balances (side by side on
-//  desktop) -> history. Members and settle-up live in slide-out drawers so they
-//  don't eat vertical space on the main page.
+// Group page shell. Holds optimistic local state for expenses and settlements
+// so mutations feel instant. Children call the optimistic callbacks, do their
+// own fetch, then confirm or revert. router.refresh() still syncs server truth,
+// but the UI doesn't wait for it.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
@@ -48,6 +48,8 @@ interface Group {
   settlements: Settlement[]
 }
 
+export type OptimisticResult = { confirm: () => void; revert: () => void }
+
 export default function GroupView({ group }: { group: Group }) {
   const [copied, setCopied] = useState(false)
   const [openDrawer, setOpenDrawer] = useState<'members' | 'settle' | 'settings' | null>(null)
@@ -61,6 +63,89 @@ export default function GroupView({ group }: { group: Group }) {
       if (stored) setPassphrase(stored)
     }
   }, [group.slug, group.hasPassphrase])
+
+  // -- optimistic local state --
+  const [localExpenses, setLocalExpenses] = useState(group.expenses)
+  const [localSettlements, setLocalSettlements] = useState(group.settlements)
+  const prevGroupRef = useRef(group)
+  const pendingAddIdsRef = useRef<Set<string>>(new Set())
+  const pendingDeleteIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (group !== prevGroupRef.current) {
+      prevGroupRef.current = group
+      setLocalExpenses(prev => {
+        const pendingAdds = prev.filter(e => pendingAddIdsRef.current.has(e.id))
+        const serverMinusDeleted = group.expenses.filter(
+          e => !pendingDeleteIdsRef.current.has(e.id)
+        )
+        return [...pendingAdds, ...serverMinusDeleted]
+      })
+      setLocalSettlements(prev => {
+        const pendingAdds = prev.filter(s => pendingAddIdsRef.current.has(s.id))
+        const serverMinusDeleted = group.settlements.filter(
+          s => !pendingDeleteIdsRef.current.has(s.id)
+        )
+        return [...pendingAdds, ...serverMinusDeleted]
+      })
+    }
+  }, [group])
+
+  const addExpenseOptimistic = useCallback((expense: Expense): OptimisticResult => {
+    pendingAddIdsRef.current.add(expense.id)
+    setLocalExpenses(prev => [expense, ...prev])
+    return {
+      confirm: () => { pendingAddIdsRef.current.delete(expense.id) },
+      revert: () => {
+        pendingAddIdsRef.current.delete(expense.id)
+        setLocalExpenses(prev => prev.filter(e => e.id !== expense.id))
+      },
+    }
+  }, [])
+
+  const removeExpenseOptimistic = useCallback((id: string): OptimisticResult => {
+    let removed: Expense | undefined
+    pendingDeleteIdsRef.current.add(id)
+    setLocalExpenses(prev => {
+      removed = prev.find(e => e.id === id)
+      return prev.filter(e => e.id !== id)
+    })
+    return {
+      confirm: () => { pendingDeleteIdsRef.current.delete(id) },
+      revert: () => {
+        pendingDeleteIdsRef.current.delete(id)
+        if (removed) setLocalExpenses(prev => [...prev, removed!])
+      },
+    }
+  }, [])
+
+  const addSettlementOptimistic = useCallback((settlement: Settlement): OptimisticResult => {
+    pendingAddIdsRef.current.add(settlement.id)
+    setLocalSettlements(prev => [settlement, ...prev])
+    return {
+      confirm: () => { pendingAddIdsRef.current.delete(settlement.id) },
+      revert: () => {
+        pendingAddIdsRef.current.delete(settlement.id)
+        setLocalSettlements(prev => prev.filter(s => s.id !== settlement.id))
+      },
+    }
+  }, [])
+
+  const removeSettlementOptimistic = useCallback((id: string): OptimisticResult => {
+    let removed: Settlement | undefined
+    pendingDeleteIdsRef.current.add(id)
+    setLocalSettlements(prev => {
+      removed = prev.find(s => s.id === id)
+      return prev.filter(s => s.id !== id)
+    })
+    return {
+      confirm: () => { pendingDeleteIdsRef.current.delete(id) },
+      revert: () => {
+        pendingDeleteIdsRef.current.delete(id)
+        if (removed) setLocalSettlements(prev => [...prev, removed!])
+      },
+    }
+  }, [])
 
   const handlePassphraseNeeded = useCallback(() => {
     setPassphraseError(null)
@@ -125,7 +210,12 @@ export default function GroupView({ group }: { group: Group }) {
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Add expense</h2>
           <div className="mt-3">
-            <ExpenseForm slug={group.slug} members={group.members} currency={group.currency} />
+            <ExpenseForm
+              slug={group.slug}
+              members={group.members}
+              currency={group.currency}
+              onOptimisticAdd={addExpenseOptimistic}
+            />
           </div>
         </section>
 
@@ -134,8 +224,8 @@ export default function GroupView({ group }: { group: Group }) {
           <div className="mt-3">
             <BalancePanel
               members={group.members}
-              expenses={group.expenses}
-              settlements={group.settlements}
+              expenses={localExpenses}
+              settlements={localSettlements}
               currency={group.currency}
             />
           </div>
@@ -147,14 +237,16 @@ export default function GroupView({ group }: { group: Group }) {
         <div className="mt-3">
           <ExpenseList
             slug={group.slug}
-            expenses={group.expenses}
-            settlements={group.settlements}
+            expenses={localExpenses}
+            settlements={localSettlements}
             members={group.members}
             currency={group.currency}
             passphrase={passphrase}
             hasPassphrase={group.hasPassphrase}
             onPassphraseNeeded={handlePassphraseNeeded}
             onPassphraseWrong={handlePassphraseWrong}
+            onOptimisticRemoveExpense={removeExpenseOptimistic}
+            onOptimisticRemoveSettlement={removeSettlementOptimistic}
           />
         </div>
       </section>
@@ -208,9 +300,10 @@ export default function GroupView({ group }: { group: Group }) {
         <SettleUp
           slug={group.slug}
           members={group.members}
-          expenses={group.expenses}
-          settlements={group.settlements}
+          expenses={localExpenses}
+          settlements={localSettlements}
           currency={group.currency}
+          onOptimisticAdd={addSettlementOptimistic}
         />
       </Drawer>
 

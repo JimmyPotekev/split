@@ -1,22 +1,20 @@
 'use client'
 
-// Suggested settle-up transfers. Runs minimumTransfers on current balances,
-// shows each suggested payment as a row with a "Record" button that POSTs a
-// settlement. After recording, the page refreshes and the balances shrink.
-//
-// Also handles fully-custom settlements via a small "or record a different
-// payment" toggle at the bottom, for cases like: someone paid outside the
-// suggested set, or split a settlement differently than the tool suggests.
+// Suggested settle-up transfers. Now with optimistic updates: clicking "Record"
+// on a suggested transfer instantly updates balances and the transfer list.
+// The custom settlement form stays non-optimistic since it has its own submit
+// flow with visible loading state.
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { computeBalances, minimumTransfers } from '@/lib/balances'
 import { minorToDisplay, parseAmountToMinor } from '@/lib/currency'
+import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
 interface Expense { payerId: string; amount: number; shares: Share[] }
-interface Settlement { fromId: string; toId: string; amount: number }
+interface Settlement { id: string; fromId: string; toId: string; amount: number; date: string | Date; note?: string | null }
 
 export default function SettleUp({
   slug,
@@ -24,15 +22,16 @@ export default function SettleUp({
   expenses,
   settlements,
   currency,
+  onOptimisticAdd,
 }: {
   slug: string
   members: Member[]
   expenses: Expense[]
   settlements: Settlement[]
   currency: string
+  onOptimisticAdd?: (settlement: Settlement) => OptimisticResult
 }) {
   const router = useRouter()
-  const [recording, setRecording] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showCustom, setShowCustom] = useState(false)
 
@@ -43,9 +42,18 @@ export default function SettleUp({
 
   const nameById = new Map(members.map((m) => [m.id, m.name]))
 
-  async function record(fromId: string, toId: string, amount: number, key: string) {
+  async function record(fromId: string, toId: string, amount: number) {
     setError(null)
-    setRecording(key)
+
+    const optimisticSettlement: Settlement = {
+      id: `optimistic-${Date.now()}`,
+      fromId,
+      toId,
+      amount,
+      date: new Date().toISOString(),
+    }
+    const result = onOptimisticAdd?.(optimisticSettlement)
+
     try {
       const res = await fetch(`/api/groups/${slug}/settlements`, {
         method: 'POST',
@@ -56,11 +64,11 @@ export default function SettleUp({
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Could not record.')
       }
+      result?.confirm()
       router.refresh()
     } catch (err) {
+      result?.revert()
       setError(err instanceof Error ? err.message : 'Unknown error.')
-    } finally {
-      setRecording(null)
     }
   }
 
@@ -84,12 +92,11 @@ export default function SettleUp({
       {transfers.length > 0 && (
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white shadow-sm">
           {transfers.map((t, i) => {
-            const key = `${t.fromId}-${t.toId}-${i}`
             const from = nameById.get(t.fromId) ?? 'Someone'
             const to = nameById.get(t.toId) ?? 'Someone'
             return (
               <li
-                key={key}
+                key={`${t.fromId}-${t.toId}-${i}`}
                 className="flex items-center justify-between gap-4 px-4 py-3"
               >
                 <div className="min-w-0 text-sm">
@@ -101,11 +108,10 @@ export default function SettleUp({
                   </span>
                 </div>
                 <button
-                  onClick={() => record(t.fromId, t.toId, t.amount, key)}
-                  disabled={recording !== null}
-                  className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white font-medium hover:bg-zinc-800 disabled:opacity-50"
+                  onClick={() => record(t.fromId, t.toId, t.amount)}
+                  className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white font-medium hover:bg-zinc-800"
                 >
-                  {recording === key ? 'Recording…' : 'Record'}
+                  Record
                 </button>
               </li>
             )
