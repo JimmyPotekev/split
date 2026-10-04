@@ -5,7 +5,7 @@
 //  desktop) -> history. Members and settle-up live in slide-out drawers so they
 //  don't eat vertical space on the main page.
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import ExpenseForm from './ExpenseForm'
 import ExpenseList from './ExpenseList'
 import BalancePanel from './BalancePanel'
@@ -13,6 +13,11 @@ import SettleUp from './SettleUp'
 import MemberManager from './MemberManager'
 import GroupSettings from './GroupSettings'
 import Drawer from '@/components/Drawer'
+import PassphrasePrompt, {
+  getStoredPassphrase,
+  setStoredPassphrase,
+  clearStoredPassphrase,
+} from '@/components/PassphrasePrompt'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -37,6 +42,7 @@ interface Group {
   slug: string
   name: string
   currency: string
+  hasPassphrase: boolean
   members: Member[]
   expenses: Expense[]
   settlements: Settlement[]
@@ -45,6 +51,35 @@ interface Group {
 export default function GroupView({ group }: { group: Group }) {
   const [copied, setCopied] = useState(false)
   const [openDrawer, setOpenDrawer] = useState<'members' | 'settle' | 'settings' | null>(null)
+  const [passphrase, setPassphrase] = useState<string | null>(null)
+  const [passphrasePromptOpen, setPassphrasePromptOpen] = useState(false)
+  const [passphraseError, setPassphraseError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (group.hasPassphrase) {
+      const stored = getStoredPassphrase(group.slug)
+      if (stored) setPassphrase(stored)
+    }
+  }, [group.slug, group.hasPassphrase])
+
+  const handlePassphraseNeeded = useCallback(() => {
+    setPassphraseError(null)
+    setPassphrasePromptOpen(true)
+  }, [])
+
+  function handlePassphraseSubmit(value: string) {
+    setPassphrase(value)
+    setStoredPassphrase(group.slug, value)
+    setPassphrasePromptOpen(false)
+    setPassphraseError(null)
+  }
+
+  function handlePassphraseWrong() {
+    clearStoredPassphrase(group.slug)
+    setPassphrase(null)
+    setPassphraseError('Wrong passphrase. Try again.')
+    setPassphrasePromptOpen(true)
+  }
 
   async function copyLink() {
     const url = typeof window !== 'undefined' ? window.location.href : ''
@@ -67,6 +102,7 @@ export default function GroupView({ group }: { group: Group }) {
           <h1 className="text-3xl font-semibold tracking-tight">{group.name}</h1>
           <p className="mt-1 text-sm text-zinc-500">
             {group.members.length} people · {group.currency}
+            {group.hasPassphrase && ' · passphrase protected'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -115,6 +151,10 @@ export default function GroupView({ group }: { group: Group }) {
             settlements={group.settlements}
             members={group.members}
             currency={group.currency}
+            passphrase={passphrase}
+            hasPassphrase={group.hasPassphrase}
+            onPassphraseNeeded={handlePassphraseNeeded}
+            onPassphraseWrong={handlePassphraseWrong}
           />
         </div>
       </section>
@@ -124,7 +164,14 @@ export default function GroupView({ group }: { group: Group }) {
         onClose={() => setOpenDrawer(null)}
         title="Members"
       >
-        <MemberManager slug={group.slug} members={group.members} />
+        <MemberManager
+          slug={group.slug}
+          members={group.members}
+          passphrase={passphrase}
+          hasPassphrase={group.hasPassphrase}
+          onPassphraseNeeded={handlePassphraseNeeded}
+          onPassphraseWrong={handlePassphraseWrong}
+        />
       </Drawer>
 
       <Drawer
@@ -137,6 +184,19 @@ export default function GroupView({ group }: { group: Group }) {
           name={group.name}
           currency={group.currency}
           hasActivity={group.expenses.length > 0 || group.settlements.length > 0}
+          passphrase={passphrase}
+          hasPassphrase={group.hasPassphrase}
+          onPassphraseNeeded={handlePassphraseNeeded}
+          onPassphraseWrong={handlePassphraseWrong}
+          onPassphraseChanged={(newPass) => {
+            if (newPass) {
+              setPassphrase(newPass)
+              setStoredPassphrase(group.slug, newPass)
+            } else {
+              setPassphrase(null)
+              clearStoredPassphrase(group.slug)
+            }
+          }}
         />
       </Drawer>
 
@@ -153,6 +213,13 @@ export default function GroupView({ group }: { group: Group }) {
           currency={group.currency}
         />
       </Drawer>
+
+      <PassphrasePrompt
+        open={passphrasePromptOpen}
+        onSubmit={handlePassphraseSubmit}
+        onCancel={() => setPassphrasePromptOpen(false)}
+        error={passphraseError}
+      />
     </main>
   )
 }

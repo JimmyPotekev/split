@@ -5,11 +5,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { newSlug } from '@/lib/slug'
+import { hashPassphrase } from '@/lib/passphrase'
 
 interface Body {
   name?: unknown
   currency?: unknown
   members?: unknown
+  passphrase?: unknown
 }
 
 export async function POST(req: NextRequest) {
@@ -29,6 +31,9 @@ export async function POST(req: NextRequest) {
     .map((m) => m.trim())
     .filter(Boolean)
 
+  const rawPassphrase = typeof body.passphrase === 'string' ? body.passphrase : ''
+  const passphraseHash = rawPassphrase ? hashPassphrase(rawPassphrase) : null
+
   if (!name) return NextResponse.json({ error: 'Group name is required.' }, { status: 400 })
   if (memberNames.length < 2) {
     return NextResponse.json({ error: 'At least two people are required.' }, { status: 400 })
@@ -47,6 +52,7 @@ export async function POST(req: NextRequest) {
           slug,
           name,
           currency,
+          passphraseHash,
           members: { create: memberNames.map((n) => ({ name: n })) },
         },
         select: { slug: true },

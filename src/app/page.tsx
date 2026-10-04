@@ -13,6 +13,8 @@ export default function LandingPage() {
   // Start with two empty member rows. Feels less intimidating than one, and a
   // group of one doesn't really need this app.
   const [members, setMembers] = useState<string[]>(['', ''])
+  const [passphrase, setPassphrase] = useState('')
+  const [confirmPassphrase, setConfirmPassphrase] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,19 +38,38 @@ export default function LandingPage() {
     const memberNames = members.map((m) => m.trim()).filter(Boolean)
     if (!trimmedName) return setError('Give the group a name.')
     if (memberNames.length < 2) return setError('Add at least two people.')
+    if (passphrase && passphrase !== confirmPassphrase) {
+      return setError('Passphrases do not match.')
+    }
 
     setSubmitting(true)
     try {
+      const body: Record<string, unknown> = {
+        name: trimmedName,
+        currency,
+        members: memberNames,
+      }
+      if (passphrase) body.passphrase = passphrase
+
       const res = await fetch('/api/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmedName, currency, members: memberNames }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || 'Something broke on our end.')
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Something broke on our end.')
       }
       const { slug } = await res.json()
+
+      if (passphrase) {
+        try {
+          sessionStorage.setItem(`split-passphrase-${slug}`, passphrase)
+        } catch {
+          // ignore
+        }
+      }
+
       router.push(`/g/${slug}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error.')
@@ -122,6 +143,33 @@ export default function LandingPage() {
           >
             + Add another person
           </button>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-zinc-700">
+            Passphrase <span className="font-normal text-zinc-400">(optional)</span>
+          </label>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            When set, editing and deleting items will require this passphrase.
+          </p>
+          <input
+            type="password"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            placeholder="Leave empty for no protection"
+            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 shadow-sm"
+            autoComplete="off"
+          />
+          {passphrase && (
+            <input
+              type="password"
+              value={confirmPassphrase}
+              onChange={(e) => setConfirmPassphrase(e.target.value)}
+              placeholder="Confirm passphrase"
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 shadow-sm"
+              autoComplete="off"
+            />
+          )}
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

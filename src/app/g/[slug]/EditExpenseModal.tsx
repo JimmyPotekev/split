@@ -6,6 +6,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { minorToDisplay, parseAmountToMinor, minorUnitFactor } from '@/lib/currency'
+import { isPassphraseError } from '@/components/PassphrasePrompt'
 
 interface Member { id: string; name: string }
 interface Share { memberId: string; amount: number }
@@ -57,12 +58,20 @@ export default function EditExpenseModal({
   expense,
   members,
   currency,
+  passphrase,
+  hasPassphrase,
+  onPassphraseNeeded,
+  onPassphraseWrong,
   onClose,
 }: {
   slug: string
   expense: Expense
   members: Member[]
   currency: string
+  passphrase?: string | null
+  hasPassphrase?: boolean
+  onPassphraseNeeded?: () => void
+  onPassphraseWrong?: () => void
   onClose: () => void
 }) {
   const router = useRouter()
@@ -125,6 +134,11 @@ export default function EditExpenseModal({
     e.preventDefault()
     setError(null)
 
+    if (hasPassphrase && !passphrase) {
+      onPassphraseNeeded?.()
+      return
+    }
+
     const minor = parseAmountToMinor(amount, currency)
     if (!description.trim()) return setError('Add a description.')
     if (minor === null || minor <= 0) return setError('Amount must be a positive number.')
@@ -164,13 +178,20 @@ export default function EditExpenseModal({
 
     setSubmitting(true)
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (passphrase) headers['X-Group-Pass'] = passphrase
+
       const res = await fetch(`/api/groups/${slug}/expenses/${expense.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (isPassphraseError(body)) {
+          onPassphraseWrong?.()
+          return
+        }
         throw new Error(body.error || 'Could not save expense.')
       }
       onClose()

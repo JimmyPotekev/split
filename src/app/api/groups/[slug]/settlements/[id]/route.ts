@@ -2,18 +2,22 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { checkPassphrase } from '@/lib/check-passphrase'
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: { slug: string; id: string } }
 ) {
   const s = await prisma.settlement.findUnique({
     where: { id: params.id },
-    select: { id: true, group: { select: { slug: true } } },
+    select: { id: true, group: { select: { slug: true, passphraseHash: true } } },
   })
   if (!s || s.group.slug !== params.slug) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
+
+  const denied = checkPassphrase(req, s.group.passphraseHash)
+  if (denied) return denied
 
   await prisma.settlement.delete({ where: { id: params.id } })
   return NextResponse.json({ ok: true })
@@ -38,6 +42,9 @@ export async function PATCH(
   if (!settlement || settlement.group.slug !== params.slug) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
+
+  const denied = checkPassphrase(req, settlement.group.passphraseHash)
+  if (denied) return denied
 
   let body: PatchBody
   try {

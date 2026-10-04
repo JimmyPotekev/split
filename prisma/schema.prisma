@@ -17,11 +17,12 @@ datasource db {
 }
 
 model Group {
-  id          String   @id @default(cuid())
-  slug        String   @unique              // the shareable URL token
-  name        String
-  currency    String   @default("USD")      // ISO 4217, three letters
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  slug           String   @unique              // the shareable URL token
+  name           String
+  currency       String   @default("USD")      // ISO 4217, three letters
+  passphraseHash String?                       // SHA-256 hex, gates DELETE/PATCH when set
+  createdAt      DateTime @default(now())
 
   members     Member[]
   expenses    Expense[]

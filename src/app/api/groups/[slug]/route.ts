@@ -5,6 +5,8 @@
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { checkPassphrase } from '@/lib/check-passphrase'
+import { hashPassphrase } from '@/lib/passphrase'
 
 export async function GET(
   _req: Request,
@@ -23,13 +25,15 @@ export async function GET(
   })
 
   if (!group) return NextResponse.json({ error: 'Group not found.' }, { status: 404 })
-  return NextResponse.json(group)
+
+  const { passphraseHash, ...rest } = group
+  return NextResponse.json({ ...rest, hasPassphrase: !!passphraseHash })
 }
 
 // PATCH /api/groups/[slug]
-// Update group name and/or currency. Currency change is blocked once any
-// expense or settlement exists, because stored minor-unit amounts don't
-// convert across currencies.
+// Update group name, currency, and/or passphrase. Currency change is blocked
+// once any expense or settlement exists, because stored minor-unit amounts
+// don't convert across currencies.
 
 export async function PATCH(
   req: Request,
@@ -51,7 +55,15 @@ export async function PATCH(
     return NextResponse.json({ error: 'Body must be JSON.' }, { status: 400 })
   }
 
-  const data: { name?: string; currency?: string } = {}
+  // passphrase check gates all PATCH operations except when you're setting
+  // the passphrase for the first time (group has no passphrase yet)
+  const isSettingFirstPassphrase = !group.passphraseHash && 'passphrase' in body
+  if (!isSettingFirstPassphrase) {
+    const denied = checkPassphrase(req, group.passphraseHash)
+    if (denied) return denied
+  }
+
+  const data: { name?: string; currency?: string; passphraseHash?: string | null } = {}
 
   if ('name' in body) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -73,6 +85,15 @@ export async function PATCH(
     data.currency = currency
   }
 
+  if ('passphrase' in body) {
+    const raw = typeof body.passphrase === 'string' ? body.passphrase : ''
+    if (raw) {
+      data.passphraseHash = hashPassphrase(raw)
+    } else {
+      data.passphraseHash = null
+    }
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }
@@ -82,5 +103,6 @@ export async function PATCH(
     data,
   })
 
-  return NextResponse.json(updated)
+  const { passphraseHash: _, ...rest } = updated
+  return NextResponse.json({ ...rest, hasPassphrase: !!updated.passphraseHash })
 }

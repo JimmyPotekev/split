@@ -4,15 +4,16 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { checkPassphrase } from '@/lib/check-passphrase'
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: { slug: string; id: string } }
 ) {
   const member = await prisma.member.findUnique({
     where: { id: params.id },
     include: {
-      group: { select: { slug: true } },
+      group: { select: { slug: true, passphraseHash: true } },
       paidExpenses: { select: { id: true }, take: 1 },
       expenseShares: { select: { id: true }, take: 1 },
       settlementsFrom: { select: { id: true }, take: 1 },
@@ -23,6 +24,9 @@ export async function DELETE(
   if (!member || member.group.slug !== params.slug) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
+
+  const denied = checkPassphrase(req, member.group.passphraseHash)
+  if (denied) return denied
 
   const hasActivity =
     member.paidExpenses.length > 0 ||
@@ -47,11 +51,14 @@ export async function PATCH(
 ) {
   const member = await prisma.member.findUnique({
     where: { id: params.id },
-    include: { group: { select: { slug: true } } },
+    include: { group: { select: { slug: true, passphraseHash: true } } },
   })
   if (!member || member.group.slug !== params.slug) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
+
+  const denied = checkPassphrase(req, member.group.passphraseHash)
+  if (denied) return denied
 
   let body: { name?: unknown }
   try {

@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { minorToDisplay } from '@/lib/currency'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { isPassphraseError } from '@/components/PassphrasePrompt'
 import EditExpenseModal from './EditExpenseModal'
 import EditSettlementModal from './EditSettlementModal'
 
@@ -53,12 +54,20 @@ export default function ExpenseList({
   settlements,
   members,
   currency,
+  passphrase,
+  hasPassphrase,
+  onPassphraseNeeded,
+  onPassphraseWrong,
 }: {
   slug: string
   expenses: Expense[]
   settlements: Settlement[]
   members: Member[]
   currency: string
+  passphrase?: string | null
+  hasPassphrase?: boolean
+  onPassphraseNeeded?: () => void
+  onPassphraseWrong?: () => void
 }) {
   const router = useRouter()
   const [pending, setPending] = useState<Pending | null>(null)
@@ -68,15 +77,33 @@ export default function ExpenseList({
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const nameById = new Map(members.map((m) => [m.id, m.name]))
 
+  function passphraseHeaders(): Record<string, string> {
+    const h: Record<string, string> = {}
+    if (passphrase) h['X-Group-Pass'] = passphrase
+    return h
+  }
+
   async function confirmDelete() {
     if (!pending) return
+    if (hasPassphrase && !passphrase) {
+      onPassphraseNeeded?.()
+      return
+    }
     setBusy(true)
     try {
       const path = pending.kind === 'expense' ? 'expenses' : 'settlements'
       const res = await fetch(`/api/groups/${slug}/${path}/${pending.id}`, {
         method: 'DELETE',
+        headers: passphraseHeaders(),
       })
-      if (!res.ok) throw new Error('Delete failed')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        if (isPassphraseError(body)) {
+          onPassphraseWrong?.()
+          return
+        }
+        throw new Error('Delete failed')
+      }
       setPending(null)
       router.refresh()
     } catch (err) {
@@ -277,6 +304,10 @@ export default function ExpenseList({
           expense={editingExpense}
           members={members}
           currency={currency}
+          passphrase={passphrase}
+          hasPassphrase={hasPassphrase}
+          onPassphraseNeeded={onPassphraseNeeded}
+          onPassphraseWrong={onPassphraseWrong}
           onClose={() => setEditingExpense(null)}
         />
       )}
@@ -287,6 +318,10 @@ export default function ExpenseList({
           settlement={editingSettlement}
           members={members}
           currency={currency}
+          passphrase={passphrase}
+          hasPassphrase={hasPassphrase}
+          onPassphraseNeeded={onPassphraseNeeded}
+          onPassphraseWrong={onPassphraseWrong}
           onClose={() => setEditingSettlement(null)}
         />
       )}

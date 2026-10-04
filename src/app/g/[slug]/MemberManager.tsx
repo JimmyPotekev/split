@@ -2,19 +2,28 @@
 
 // Manage group members: add new ones, rename existing, remove unused.
 // Inline editing keeps things tight. Delete is blocked server-side if the
-// member has any expenses or settlements, and the error surfaces here.
+// member has any expenses or settlements attached, and the error surfaces here.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { isPassphraseError } from '@/components/PassphrasePrompt'
 
 interface Member { id: string; name: string }
 
 export default function MemberManager({
   slug,
   members,
+  passphrase,
+  hasPassphrase,
+  onPassphraseNeeded,
+  onPassphraseWrong,
 }: {
   slug: string
   members: Member[]
+  passphrase?: string | null
+  hasPassphrase?: boolean
+  onPassphraseNeeded?: () => void
+  onPassphraseWrong?: () => void
 }) {
   const router = useRouter()
   const [newName, setNewName] = useState('')
@@ -23,6 +32,12 @@ export default function MemberManager({
   const [editName, setEditName] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  function passphraseHeaders(): Record<string, string> {
+    const h: Record<string, string> = {}
+    if (passphrase) h['X-Group-Pass'] = passphrase
+    return h
+  }
 
   async function addMember(e: React.FormEvent) {
     e.preventDefault()
@@ -58,16 +73,24 @@ export default function MemberManager({
   async function saveRename(id: string) {
     const trimmed = editName.trim()
     if (!trimmed) return
+    if (hasPassphrase && !passphrase) {
+      onPassphraseNeeded?.()
+      return
+    }
     setError(null)
     setBusy(id)
     try {
       const res = await fetch(`/api/groups/${slug}/members/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...passphraseHeaders() },
         body: JSON.stringify({ name: trimmed }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (isPassphraseError(body)) {
+          onPassphraseWrong?.()
+          return
+        }
         throw new Error(body.error || 'Could not rename.')
       }
       setEditingId(null)
@@ -80,14 +103,23 @@ export default function MemberManager({
   }
 
   async function removeMember(m: Member) {
+    if (hasPassphrase && !passphrase) {
+      onPassphraseNeeded?.()
+      return
+    }
     setError(null)
     setBusy(m.id)
     try {
       const res = await fetch(`/api/groups/${slug}/members/${m.id}`, {
         method: 'DELETE',
+        headers: passphraseHeaders(),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (isPassphraseError(body)) {
+          onPassphraseWrong?.()
+          return
+        }
         throw new Error(body.error || 'Could not remove.')
       }
       router.refresh()

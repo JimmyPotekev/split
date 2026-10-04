@@ -18,8 +18,6 @@ export default async function GroupPage({ params }: { params: { slug: string } }
 
   if (!group) notFound()
 
-  // Prisma returns Date objects and BigInts fine, but the client component
-  // gets serialized props. Dates serialize to strings across that boundary
-  // automatically. amounts are Int not BigInt so we're safe on that front.
-  return <GroupView group={group} />
+  const { passphraseHash, ...rest } = group
+  return <GroupView group={{ ...rest, hasPassphrase: !!passphraseHash }} />
 }
