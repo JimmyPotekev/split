@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation'
 import { parseAmountToMinor, minorToDisplay, minorUnitFactor } from '@/lib/currency'
 import { splitEqual, splitPercent } from '@/lib/balances'
 import { fetchOrQueue } from '@/lib/offline-queue'
+import { useToast } from '@/components/Toast'
 import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
@@ -41,6 +42,7 @@ export default function ExpenseForm({
   onQueued?: () => void
 }) {
   const router = useRouter()
+  const toast = useToast()
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [payerId, setPayerId] = useState(members[0]?.id ?? '')
@@ -172,7 +174,7 @@ export default function ExpenseForm({
       router.refresh()
     } catch (err) {
       result?.revert()
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not save expense.')
     }
   }
 

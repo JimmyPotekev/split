@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { computeBalances, minimumTransfers } from '@/lib/balances'
 import { minorToDisplay, parseAmountToMinor } from '@/lib/currency'
 import { fetchOrQueue } from '@/lib/offline-queue'
+import { useToast } from '@/components/Toast'
 import type { OptimisticResult } from './GroupView'
 
 interface Member { id: string; name: string }
@@ -35,7 +36,7 @@ export default function SettleUp({
   onQueued?: () => void
 }) {
   const router = useRouter()
-  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
   const [showCustom, setShowCustom] = useState(false)
 
   const transfers = useMemo(() => {
@@ -46,8 +47,6 @@ export default function SettleUp({
   const nameById = new Map(members.map((m) => [m.id, m.name]))
 
   async function record(fromId: string, toId: string, amount: number) {
-    setError(null)
-
     const optimisticSettlement: Settlement = {
       id: `optimistic-${Date.now()}`,
       fromId,
@@ -86,7 +85,7 @@ export default function SettleUp({
       router.refresh()
     } catch (err) {
       result?.revert()
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not record settlement.')
     }
   }
 
@@ -137,8 +136,6 @@ export default function SettleUp({
         </ul>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
       {!showCustom ? (
         <button
           type="button"
@@ -182,6 +179,7 @@ function CustomSettlementForm({
   onCancel: () => void
   onQueued: () => void
 }) {
+  const toast = useToast()
   const [fromId, setFromId] = useState(members[0]?.id ?? '')
   const [toId, setToId] = useState(members[1]?.id ?? '')
   const [amount, setAmount] = useState('')
@@ -220,7 +218,7 @@ function CustomSettlementForm({
       }
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not record settlement.')
     } finally {
       setSubmitting(false)
     }
@@ -266,7 +264,7 @@ function CustomSettlementForm({
           disabled={submitting}
           className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white font-medium hover:bg-zinc-800 disabled:opacity-50"
         >
-          {submitting ? 'Recording…' : 'Record payment'}
+          {submitting ? 'Recording...' : 'Record payment'}
         </button>
         <button
           type="button"

@@ -36,36 +36,47 @@ export default function BalancePanel({
   }, [members, balances])
 
   const allZero = rows.every((r) => r.balance === 0)
+  const hasActivity = expenses.length > 0 || settlements.length > 0
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-      <ul className="divide-y divide-zinc-200">
-        {rows.map((r) => (
-          <li key={r.member.id} className="flex items-center justify-between px-4 py-3">
-            <span className="font-medium">{r.member.name}</span>
-            <span
-              className={
-                'tabular-nums font-medium ' +
-                (r.balance > 0
-                  ? 'text-emerald-700'
-                  : r.balance < 0
-                    ? 'text-red-600'
-                    : 'text-zinc-500')
-              }
-            >
-              {r.balance > 0 && '+'}
-              {minorToDisplay(r.balance, currency)}
-              <span className="ml-2 text-xs font-normal text-zinc-500">
-                {r.balance > 0 ? 'is owed' : r.balance < 0 ? 'owes' : 'settled'}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      {allZero && (
-        <p className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-500">
-          Everyone's settled up.
-        </p>
+      {!hasActivity ? (
+        <div className="px-4 py-6 text-center">
+          <p className="text-sm text-zinc-500">
+            Balances will appear here once expenses are added.
+          </p>
+        </div>
+      ) : (
+        <>
+          <ul className="divide-y divide-zinc-200">
+            {rows.map((r) => (
+              <li key={r.member.id} className="flex items-center justify-between px-4 py-3">
+                <span className="font-medium">{r.member.name}</span>
+                <span
+                  className={
+                    'tabular-nums font-medium ' +
+                    (r.balance > 0
+                      ? 'text-emerald-700'
+                      : r.balance < 0
+                        ? 'text-red-600'
+                        : 'text-zinc-500')
+                  }
+                >
+                  {r.balance > 0 && '+'}
+                  {minorToDisplay(r.balance, currency)}
+                  <span className="ml-2 text-xs font-normal text-zinc-500">
+                    {r.balance > 0 ? 'is owed' : r.balance < 0 ? 'owes' : 'settled'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {allZero && (
+            <p className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-500">
+              Everyone's settled up.
+            </p>
+          )}
+        </>
       )}
     </div>
   )

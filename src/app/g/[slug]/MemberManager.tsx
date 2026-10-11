@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { isPassphraseError } from '@/components/PassphrasePrompt'
+import { useToast } from '@/components/Toast'
 
 interface Member { id: string; name: string }
 
@@ -22,28 +23,21 @@ export default function MemberManager({
   members: Member[]
   passphrase?: string | null
   hasPassphrase?: boolean
-  onPassphraseNeeded?: () => void
+  onPassphraseNeeded?: (retry?: (passphrase: string) => void) => void
   onPassphraseWrong?: () => void
 }) {
   const router = useRouter()
+  const toast = useToast()
   const [newName, setNewName] = useState('')
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  function passphraseHeaders(): Record<string, string> {
-    const h: Record<string, string> = {}
-    if (passphrase) h['X-Group-Pass'] = passphrase
-    return h
-  }
 
   async function addMember(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = newName.trim()
     if (!trimmed) return
-    setError(null)
     setAdding(true)
     try {
       const res = await fetch(`/api/groups/${slug}/members`, {
@@ -58,7 +52,7 @@ export default function MemberManager({
       setNewName('')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not add member.')
     } finally {
       setAdding(false)
     }
@@ -67,27 +61,29 @@ export default function MemberManager({
   function startRename(m: Member) {
     setEditingId(m.id)
     setEditName(m.name)
-    setError(null)
   }
 
-  async function saveRename(id: string) {
+  async function saveRename(id: string, overridePassphrase?: string) {
     const trimmed = editName.trim()
     if (!trimmed) return
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => saveRename(id, provided))
       return
     }
-    setError(null)
     setBusy(id)
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (pp) headers['X-Group-Pass'] = pp
     try {
       const res = await fetch(`/api/groups/${slug}/members/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...passphraseHeaders() },
+        headers,
         body: JSON.stringify({ name: trimmed }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          onPassphraseNeeded?.((provided) => saveRename(id, provided))
           onPassphraseWrong?.()
           return
         }
@@ -96,27 +92,30 @@ export default function MemberManager({
       setEditingId(null)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not rename member.')
     } finally {
       setBusy(null)
     }
   }
 
-  async function removeMember(m: Member) {
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+  async function removeMember(m: Member, overridePassphrase?: string) {
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => removeMember(m, provided))
       return
     }
-    setError(null)
     setBusy(m.id)
+    const headers: Record<string, string> = {}
+    if (pp) headers['X-Group-Pass'] = pp
     try {
       const res = await fetch(`/api/groups/${slug}/members/${m.id}`, {
         method: 'DELETE',
-        headers: passphraseHeaders(),
+        headers,
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          onPassphraseNeeded?.((provided) => removeMember(m, provided))
           onPassphraseWrong?.()
           return
         }
@@ -124,7 +123,7 @@ export default function MemberManager({
       }
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not remove member.')
     } finally {
       setBusy(null)
     }
@@ -213,7 +212,6 @@ export default function MemberManager({
         </button>
       </form>
 
-      {error && <p className="px-4 pb-3 text-sm text-red-600">{error}</p>}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { minorToDisplay } from '@/lib/currency'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { useToast } from '@/components/Toast'
 import { isPassphraseError } from '@/components/PassphrasePrompt'
 import EditExpenseModal from './EditExpenseModal'
 import EditSettlementModal from './EditSettlementModal'
@@ -68,48 +69,52 @@ export default function ExpenseList({
   currency: string
   passphrase?: string | null
   hasPassphrase?: boolean
-  onPassphraseNeeded?: () => void
+  onPassphraseNeeded?: (retry?: (passphrase: string) => void) => void
   onPassphraseWrong?: () => void
   onOptimisticRemoveExpense?: (id: string) => OptimisticResult
   onOptimisticRemoveSettlement?: (id: string) => OptimisticResult
 }) {
   const router = useRouter()
+  const toast = useToast()
   const [pending, setPending] = useState<Pending | null>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const nameById = new Map(members.map((m) => [m.id, m.name]))
 
-  function passphraseHeaders(): Record<string, string> {
-    const h: Record<string, string> = {}
-    if (passphrase) h['X-Group-Pass'] = passphrase
-    return h
-  }
-
-  async function confirmDelete() {
+  async function confirmDelete(overridePassphrase?: string) {
     if (!pending) return
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => confirmDelete(provided))
       return
     }
 
     const { kind, id } = pending
-    const removeFn = kind === 'expense' ? onOptimisticRemoveExpense : onOptimisticRemoveSettlement
-    const result = removeFn?.(id)
 
-    // close dialog and remove row immediately
+    // When using a just-entered passphrase (overridePassphrase), skip the optimistic
+    // update: we don't know yet if it's correct, and a wrong one would cause a
+    // disappear/reappear flicker. Fall back to router.refresh on success.
+    const useOptimistic = !overridePassphrase
+    const removeFn = kind === 'expense' ? onOptimisticRemoveExpense : onOptimisticRemoveSettlement
+    const result = useOptimistic ? removeFn?.(id) : undefined
+
     setPending(null)
+
+    const headers: Record<string, string> = {}
+    if (pp) headers['X-Group-Pass'] = pp
 
     const path = kind === 'expense' ? 'expenses' : 'settlements'
     try {
       const res = await fetch(`/api/groups/${slug}/${path}/${id}`, {
         method: 'DELETE',
-        headers: passphraseHeaders(),
+        headers,
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
           result?.revert()
+          onPassphraseNeeded?.((provided) => confirmDelete(provided))
           onPassphraseWrong?.()
           return
         }
@@ -119,7 +124,7 @@ export default function ExpenseList({
       router.refresh()
     } catch (err) {
       result?.revert()
-      alert(err instanceof Error ? err.message : 'Delete failed')
+      toast(err instanceof Error ? err.message : 'Delete failed')
     }
   }
 
@@ -138,9 +143,15 @@ export default function ExpenseList({
 
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-zinc-500">
-        No activity yet. Add your first expense above.
-      </p>
+      <div className="rounded-lg border border-dashed border-zinc-300 bg-white px-6 py-10 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto h-10 w-10 text-zinc-300">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+        <p className="mt-3 text-sm font-medium text-zinc-700">No expenses yet</p>
+        <p className="mt-1 text-sm text-zinc-500">
+          Add your first expense using the form above to start tracking who owes what.
+        </p>
+      </div>
     )
   }
 
@@ -312,7 +323,7 @@ export default function ExpenseList({
           </>
         }
         busy={false}
-        onConfirm={confirmDelete}
+        onConfirm={() => confirmDelete()}
         onCancel={() => setPending(null)}
       />
 

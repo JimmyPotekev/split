@@ -35,7 +35,7 @@ export default function EditSettlementModal({
   currency: string
   passphrase?: string | null
   hasPassphrase?: boolean
-  onPassphraseNeeded?: () => void
+  onPassphraseNeeded?: (retry?: (passphrase: string) => void) => void
   onPassphraseWrong?: () => void
   onClose: () => void
 }) {
@@ -50,12 +50,13 @@ export default function EditSettlementModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSubmit(e: React.FormEvent | null, overridePassphrase?: string) {
+    if (e) e.preventDefault()
     setError(null)
 
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => handleSubmit(null, provided))
       return
     }
 
@@ -66,7 +67,7 @@ export default function EditSettlementModal({
     setSubmitting(true)
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (passphrase) headers['X-Group-Pass'] = passphrase
+      if (pp) headers['X-Group-Pass'] = pp
 
       const res = await fetch(`/api/groups/${slug}/settlements/${settlement.id}`, {
         method: 'PATCH',
@@ -81,6 +82,7 @@ export default function EditSettlementModal({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          onPassphraseNeeded?.((provided) => handleSubmit(null, provided))
           onPassphraseWrong?.()
           return
         }

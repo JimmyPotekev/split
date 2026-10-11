@@ -18,6 +18,7 @@ import SettleUp from './SettleUp'
 import MemberManager from './MemberManager'
 import GroupSettings from './GroupSettings'
 import Drawer from '@/components/Drawer'
+import { ToastProvider } from '@/components/Toast'
 import OfflineBanner from '@/components/OfflineBanner'
 import PassphrasePrompt, {
   getStoredPassphrase,
@@ -205,7 +206,10 @@ export default function GroupView({ group }: { group: Group }) {
     }
   }, [])
 
-  const handlePassphraseNeeded = useCallback(() => {
+  const pendingRetryRef = useRef<((passphrase: string) => void) | null>(null)
+
+  const handlePassphraseNeeded = useCallback((retry?: (passphrase: string) => void) => {
+    pendingRetryRef.current = retry ?? null
     setPassphraseError(null)
     setPassphrasePromptOpen(true)
   }, [])
@@ -215,6 +219,9 @@ export default function GroupView({ group }: { group: Group }) {
     setStoredPassphrase(group.slug, value)
     setPassphrasePromptOpen(false)
     setPassphraseError(null)
+    const retry = pendingRetryRef.current
+    pendingRetryRef.current = null
+    if (retry) retry(value)
   }
 
   function handlePassphraseWrong() {
@@ -239,6 +246,7 @@ export default function GroupView({ group }: { group: Group }) {
     'rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50'
 
   return (
+    <ToastProvider>
     <main className="mx-auto max-w-5xl px-4 sm:px-6 py-10">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -376,5 +384,6 @@ export default function GroupView({ group }: { group: Group }) {
 
       <OfflineBanner pendingCount={pendingCount} replaying={replaying} />
     </main>
+    </ToastProvider>
   )
 }

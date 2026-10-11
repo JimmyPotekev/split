@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { isPassphraseError } from '@/components/PassphrasePrompt'
+import { useToast } from '@/components/Toast'
 
 const CURRENCIES = [
   { code: 'USD', label: 'USD — US Dollar' },
@@ -30,36 +31,33 @@ export default function GroupSettings({
   hasActivity: boolean
   passphrase?: string | null
   hasPassphrase?: boolean
-  onPassphraseNeeded?: () => void
+  onPassphraseNeeded?: (retry?: (passphrase: string) => void) => void
   onPassphraseWrong?: () => void
   onPassphraseChanged?: (newPassphrase: string | null) => void
 }) {
   const router = useRouter()
+  const toast = useToast()
   const [editName, setEditName] = useState(name)
   const [editCurrency, setEditCurrency] = useState(currency)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
 
   const [newPassphrase, setNewPassphrase] = useState('')
   const [confirmPassphrase, setConfirmPassphrase] = useState('')
   const [passphraseBusy, setPassphraseBusy] = useState(false)
   const [passphraseError, setPassphraseError] = useState<string | null>(null)
-  const [passphraseSuccess, setPassphraseSuccess] = useState<string | null>(null)
 
   const nameChanged = editName.trim() !== name
   const currencyChanged = editCurrency !== currency
   const hasChanges = nameChanged || currencyChanged
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
+  async function save(e: React.FormEvent | null, overridePassphrase?: string) {
+    if (e) e.preventDefault()
     if (!hasChanges) return
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => save(null, provided))
       return
     }
-    setError(null)
-    setSuccess(null)
     setBusy(true)
 
     const patch: Record<string, string> = {}
@@ -68,7 +66,7 @@ export default function GroupSettings({
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (passphrase) headers['X-Group-Pass'] = passphrase
+      if (pp) headers['X-Group-Pass'] = pp
 
       const res = await fetch(`/api/groups/${slug}`, {
         method: 'PATCH',
@@ -78,39 +76,39 @@ export default function GroupSettings({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          onPassphraseNeeded?.((provided) => save(null, provided))
           onPassphraseWrong?.()
           return
         }
         throw new Error(body.error || 'Could not update group.')
       }
-      setSuccess('Saved.')
-      setTimeout(() => setSuccess(null), 2000)
+      toast('Settings saved.', 'success')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not update group.')
     } finally {
       setBusy(false)
     }
   }
 
-  async function savePassphrase(e: React.FormEvent) {
-    e.preventDefault()
+  async function savePassphrase(e: React.FormEvent | null, overridePassphrase?: string) {
+    if (e) e.preventDefault()
     setPassphraseError(null)
-    setPassphraseSuccess(null)
 
     if (newPassphrase && newPassphrase !== confirmPassphrase) {
       return setPassphraseError('Passphrases do not match.')
     }
 
-    if (hasPassphrase && !passphrase) {
-      onPassphraseNeeded?.()
+    const pp = overridePassphrase ?? passphrase
+    if (hasPassphrase && !pp) {
+      onPassphraseNeeded?.((provided) => savePassphrase(null, provided))
       return
     }
 
     setPassphraseBusy(true)
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (passphrase) headers['X-Group-Pass'] = passphrase
+      if (pp) headers['X-Group-Pass'] = pp
 
       const res = await fetch(`/api/groups/${slug}`, {
         method: 'PATCH',
@@ -120,6 +118,7 @@ export default function GroupSettings({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         if (isPassphraseError(body)) {
+          onPassphraseNeeded?.((provided) => savePassphrase(null, provided))
           onPassphraseWrong?.()
           return
         }
@@ -128,17 +127,16 @@ export default function GroupSettings({
 
       if (newPassphrase) {
         onPassphraseChanged?.(newPassphrase)
-        setPassphraseSuccess('Passphrase set.')
+        toast('Passphrase set.', 'success')
       } else {
         onPassphraseChanged?.(null)
-        setPassphraseSuccess('Passphrase removed.')
+        toast('Passphrase removed.', 'success')
       }
       setNewPassphrase('')
       setConfirmPassphrase('')
-      setTimeout(() => setPassphraseSuccess(null), 2000)
       router.refresh()
     } catch (err) {
-      setPassphraseError(err instanceof Error ? err.message : 'Unknown error.')
+      toast(err instanceof Error ? err.message : 'Could not update passphrase.')
     } finally {
       setPassphraseBusy(false)
     }
@@ -181,9 +179,6 @@ export default function GroupSettings({
             </p>
           )}
         </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-green-600">{success}</p>}
 
         <button
           type="submit"
@@ -241,7 +236,6 @@ export default function GroupSettings({
         )}
 
         {passphraseError && <p className="text-sm text-red-600">{passphraseError}</p>}
-        {passphraseSuccess && <p className="text-sm text-green-600">{passphraseSuccess}</p>}
 
         <button
           type="submit"
